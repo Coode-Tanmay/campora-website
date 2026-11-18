@@ -1,0 +1,6 @@
+{
+  "name": "CAMPORA",
+  "description": "Turning Deadlines Into Done - Premium Academic Support, PPTs, Reports, and Internship Documentation",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
