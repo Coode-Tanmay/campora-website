@@ -913,23 +913,23 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
 // ==========================================
 
 // Get authenticated customer's own orders ONLY
-app.get('/api/customer/orders', requireAuth, (req: RequestWithUser, res: Response) => {
+app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   
   // Filter exclusively for this customer
-  const userOrders = ordersStore
+  const userOrders = await Promise.all(ordersStore
     .filter((o) => o.customerId === user.id)
-    .map((o) => {
-      // Strip private admin notes before returning to customer
-      const { adminNotes, ...customerSafeOrder } = o;
+    .map(async (o) => {
+      // Strip private admin notes before returning to customer.
+      const { adminNotes, ...customerSafeOrder } = await withSignedFileLinks(o);
       return customerSafeOrder;
-    });
+    }));
 
   res.json({ orders: userOrders });
 });
 
 // Get single order with strict ownership authorization
-app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Response) => {
+app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
 
@@ -946,8 +946,9 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
     return;
   }
 
-  const { adminNotes, ...customerSafeOrder } = order;
-  res.json({ order: user.role === 'admin' ? order : customerSafeOrder });
+  const signedOrder = await withSignedFileLinks(order);
+  const { adminNotes, ...customerSafeOrder } = signedOrder;
+  res.json({ order: user.role === 'admin' ? signedOrder : customerSafeOrder });
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
@@ -1110,13 +1111,19 @@ app.post('/api/customer/orders/:id/payment', rateLimit('payment-proof', 8, 15 * 
     return;
   }
 
-  let safeScreenshotUrl: string | undefined;
+  let screenshotStoragePath: string | undefined;
   if (typeof screenshotUrl === 'string' && screenshotUrl.trim()) {
     if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(screenshotUrl) || screenshotUrl.length > 700000) {
       res.status(400).json({ error: 'Payment screenshot must be a PNG or JPG image under 500 KB.' });
       return;
     }
-    safeScreenshotUrl = screenshotUrl;
+    try {
+      const storedScreenshot = await uploadPrivateDataUrl('orders/' + order.id + '/payments', screenshotName || 'payment-proof.png', screenshotUrl, 500 * 1024);
+      screenshotStoragePath = storedScreenshot.storagePath;
+    } catch (uploadError: any) {
+      res.status(400).json({ error: uploadError.message || 'Unable to store payment screenshot securely.' });
+      return;
+    }
   }
 
   const payableAmount = order.finalPrice ?? order.total;
@@ -1141,9 +1148,9 @@ app.post('/api/customer/orders/:id/payment', rateLimit('payment-proof', 8, 15 * 
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
       utrNumber: cleanUtr,
-      screenshotUrl: safeScreenshotUrl,
-      screenshotName: safeScreenshotUrl ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
-      screenshotSize: safeScreenshotUrl && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
+      screenshotStoragePath,
+      screenshotName: screenshotStoragePath ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
+      screenshotSize: screenshotStoragePath && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
       submittedAt: now,
       amountPaid: payableAmount,
     },
@@ -1155,7 +1162,7 @@ app.post('/api/customer/orders/:id/payment', rateLimit('payment-proof', 8, 15 * 
   await persistState();
 
   const { adminNotes, ...customerSafeOrder } = updatedOrder;
-  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
+  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: await withSignedFileLinks(customerSafeOrder as CamporaOrder) });
 });
 
 // Customer profile & stats
@@ -1189,7 +1196,7 @@ app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Respon
 // ==========================================
 
 // Dashboard Overview Metrics
-app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/overview', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const totalOrders = ordersStore.length;
   const newOrders = ordersStore.filter((o) => o.status === 'new_order').length;
   const pendingApproval = ordersStore.filter((o) => o.status === 'new_order' || o.status === 'under_review' || o.status === 'requirements_review').length;
@@ -1212,12 +1219,12 @@ app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Respon
       cancelledOrders,
       totalRevenue,
     },
-    recentOrders: ordersStore.slice(0, 10),
+    recentOrders: await Promise.all(ordersStore.slice(0, 10).map(withSignedFileLinks)),
   });
 });
 
 // Admin All Orders with query filters
-app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.get('/api/admin/orders', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const { status, paymentStatus, search, sort } = req.query as {
     status?: string;
     paymentStatus?: string;
@@ -1252,7 +1259,7 @@ app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response)
     filtered.reverse();
   }
 
-  res.json({ orders: filtered, total: filtered.length });
+  res.json({ orders: await Promise.all(filtered.map(withSignedFileLinks)), total: filtered.length });
 });
 
 // Admin Order Status Update (Approve, Reject, Cancel, In Progress, Review, Completed)
@@ -1555,7 +1562,7 @@ app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Respo
 });
 
 // Admin File Repository Aggregator
-app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const files: any[] = [];
 
   ordersStore.forEach((ord) => {
@@ -1597,7 +1604,7 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
         fileType: 'image/png',
         size: ord.paymentDetails.screenshotSize || '350 KB',
         uploadedAt: ord.paymentDetails.submittedAt || ord.updatedAt,
-        previewUrl: ord.paymentDetails.screenshotUrl,
+        previewUrl: ord.paymentDetails.screenshotStoragePath ? await createPrivateSignedUrl(ord.paymentDetails.screenshotStoragePath) : ord.paymentDetails.screenshotUrl,
       });
     }
 
