@@ -408,7 +408,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               <p className="text-sm text-[#B8B8B8] max-w-lg mx-auto mt-2">
                 {createdOrderSummary.requiresReview
                   ? 'Our academic review desk is examining your brief. You will receive quote confirmation on your WhatsApp & dashboard shortly.'
-                  : 'Your academic specialist has been assigned. You can track real-time milestone progress on your student tracking dashboard.'}
+                  : 'Your order has been received. Track its status from your student dashboard. Work begins after payment verification.'}
               </p>
             </div>
 
