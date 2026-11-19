@@ -73,6 +73,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [newDeliverableTitle, setNewDeliverableTitle] = useState('');
   const [newDeliverableType, setNewDeliverableType] = useState('PDF');
   const [newDeliverableFile, setNewDeliverableFile] = useState<File | null>(null);
+  const [quoteAmount, setQuoteAmount] = useState('');
 
   // Admin notes
   const [adminNoteInput, setAdminNoteInput] = useState('');
@@ -116,6 +117,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   useEffect(() => {
     if (activeOrder) {
       setAdminNoteInput(activeOrder.adminNotes || '');
+      setQuoteAmount(String(activeOrder.finalPrice ?? activeOrder.total ?? 0));
     }
   }, [selectedOrderId]);
 
@@ -134,9 +136,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const handleApproveOrder = async () => {
     if (!activeOrder) return;
     try {
-      const res = await api.updateOrderStatus(activeOrder.id, 'approved');
+      const needsQuote = activeOrder.requiresReview || activeOrder.pricingType === 'variable' || activeOrder.quoteStatus === 'pending';
+      const res = needsQuote
+        ? await api.sendQuote(activeOrder.id, Number(quoteAmount), 'Final quote confirmed by CAMPORA.')
+        : await api.updateOrderStatus(activeOrder.id, 'approved');
       setOrders((prev) => prev.map((o) => (o.id === activeOrder.id ? res.order : o)));
-      triggerToast(`Order ${activeOrder.id} approved. Activated for payment.`);
+      triggerToast(needsQuote ? `Quote sent for ${activeOrder.id}. Customer can now submit UPI proof.` : `Order ${activeOrder.id} approved for payment.`);
     } catch (err: any) {
       triggerToast(err.message || 'Failed to approve order.');
     }
@@ -633,6 +638,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                     </div>
                   </div>
 
+                  {(activeOrder.requiresReview || activeOrder.pricingType === 'variable' || activeOrder.quoteStatus === 'pending') && (
+                    <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2">
+                      <label className="block text-xs font-bold text-amber-300" htmlFor="admin-final-quote">Final quote (₹)</label>
+                      <input
+                        id="admin-final-quote"
+                        type="number"
+                        min="1"
+                        max="100000"
+                        step="1"
+                        value={quoteAmount}
+                        onChange={(e) => setQuoteAmount(e.target.value)}
+                        className="w-full sm:max-w-xs bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                      />
+                      <p className="text-[11px] text-zinc-400">The customer cannot pay until this quote is sent. The ₹499 Complete Internship Package remains fixed and cannot be discounted.</p>
+                    </div>
+                  )}
+
                   {/* Order Workflow Action Buttons */}
                   <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 space-y-3">
                     <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
@@ -647,14 +669,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         onClick={handleApproveOrder}
                         className="px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
                       >
-                        <Check className="w-3.5 h-3.5" /> Approve Requirements
+                        <Check className="w-3.5 h-3.5" /> {(activeOrder.requiresReview || activeOrder.pricingType === 'variable' || activeOrder.quoteStatus === 'pending') ? 'Send Quote & Approve' : 'Approve Requirements'}
                       </button>
 
                       {/* In Progress */}
                       <button
                         id="btn-admin-in-progress"
                         onClick={handleMarkInProgress}
-                        className="px-3 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30 flex items-center gap-1.5 transition-colors"
+                        disabled={activeOrder.paymentStatus !== 'paid'}
+                        className="px-3 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Clock className="w-3.5 h-3.5" /> Mark In Progress
                       </button>
@@ -663,21 +686,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <button
                         id="btn-admin-review"
                         onClick={handleMarkReview}
-                        className="px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-semibold border border-purple-500/30 flex items-center gap-1.5 transition-colors"
+                        disabled={activeOrder.paymentStatus !== 'paid'}
+                        className="px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-semibold border border-purple-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Eye className="w-3.5 h-3.5" /> Move to Review
                       </button>
-
-                      {/* Confirm Payment */}
-                      {activeOrder.paymentStatus !== 'paid' && (
-                        <button
-                          id="btn-admin-confirm-pay"
-                          onClick={() => handleConfirmPayment()}
-                          className="px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-semibold flex items-center gap-1.5 transition-colors"
-                        >
-                          <CreditCard className="w-3.5 h-3.5" /> Confirm Payment
-                        </button>
-                      )}
 
                       {/* Reject Order */}
                       <button
