@@ -819,76 +819,11 @@ app.post('/api/auth/admin/login', rateLimit('admin-login', 5, 15 * 60 * 1000), a
   res.status(401).json({ error: 'Invalid administrator credentials. Please check username and password.' });
 });
 
-// Customer Email/Password Login & Register
-app.post('/api/auth/customer/login', rateLimit('customer-login', 10, 15 * 60 * 1000), async (req: Request, res: Response) => {
-  const { email, password, name, whatsapp, college } = req.body;
-
-  if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
-    res.status(400).json({ error: 'A valid email and password are required.' });
-    return;
-  }
-  if (password.length < 8) {
-    res.status(400).json({ error: 'Password must contain at least 8 characters.' });
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  let user = usersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-  if (!user) {
-    if (!name?.trim()) {
-      res.status(400).json({ error: 'Name is required when creating a customer account.' });
-      return;
-    }
-    const newCustomer: StoredUser = {
-      id: `cust-${Date.now()}`,
-      name: name.trim(),
-      email: normalizedEmail,
-      passwordHash: await bcrypt.hash(password, 12),
-      role: 'customer',
-      whatsapp: whatsapp?.trim() || '',
-      college: college?.trim() || '',
-      authProvider: 'email',
-      createdAt: new Date().toISOString(),
-    };
-    usersStore.push(newCustomer);
-    user = newCustomer;
-  } else {
-    if (!user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
-      res.status(401).json({ error: 'Invalid email or password.' });
-      return;
-    }
-    if (name && !user.name) user.name = name.trim();
-    if (whatsapp && !user.whatsapp) user.whatsapp = whatsapp.trim();
-    if (college && !user.college) user.college = college.trim();
-  }
-
-  await persistState();
-
-  const customerPayload: AuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    avatar: user.avatar,
-    role: 'customer',
-    whatsapp: user.whatsapp,
-    college: user.college,
-    authProvider: 'email',
-    createdAt: user.createdAt,
-  };
-
-  const token = jwt.sign(customerPayload, JWT_SECRET, { expiresIn: '7d' });
-
-  res.cookie('campora_session', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-
-  res.json({
-    success: true,
-    user: customerPayload,
+// Email/password sign-in is disabled until verified email delivery and account recovery are configured.
+// All current customer accounts use provider OAuth; do not create unverified email identities.
+app.post('/api/auth/customer/login', rateLimit('customer-login', 10, 15 * 60 * 1000), (_req: Request, res: Response) => {
+  res.status(410).json({
+    error: 'Email/password sign-in is not available yet. Please continue with your verified Google or Microsoft account.',
   });
 });
 
