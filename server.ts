@@ -1450,7 +1450,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 // Admin Upload Completed Deliverable
 app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
-  const { title, fileType, fileSize, downloadUrl } = req.body;
+  const { title, fileType, fileData, fileName } = req.body || {};
 
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
   if (orderIndex === -1) {
@@ -1463,30 +1463,37 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
     res.status(409).json({ error: 'A deliverable cannot be marked complete until payment is verified.' });
     return;
   }
-  if (typeof downloadUrl !== 'string' || !/^https:\/\//i.test(downloadUrl) || downloadUrl === '#') {
-    res.status(400).json({ error: 'A real HTTPS file URL is required. Placeholder links cannot be published as completed work.' });
+
+  let storedFile: { storagePath: string; contentType: string; size: number };
+  try {
+    storedFile = await uploadPrivateDataUrl('orders/' + order.id + '/deliverables', fileName || title || 'completed-work', fileData);
+  } catch (uploadError: any) {
+    res.status(400).json({ error: uploadError.message || 'Unable to upload completed work.' });
     return;
   }
 
+  const now = new Date().toISOString();
+  const safeTitle = typeof title === 'string' && title.trim()
+    ? title.trim().slice(0, 180)
+    : path.basename(String(fileName || 'Completed_Deliverable')).slice(0, 180);
   const newDeliverable: DeliverableFile = {
-    id: `del-${Date.now()}`,
-    title: title?.trim() || `${order.serviceName.replace(/\s+/g, '_')}_Final_Deliverable.${fileType?.toLowerCase() || 'pdf'}`,
-    fileType: (fileType || 'PDF').toUpperCase(),
-    fileSize: fileSize || '2.4 MB',
-    uploadedAt: 'Today, Just now',
-    downloadUrl: downloadUrl || '#',
+    id: 'del-' + randomBytes(8).toString('hex'),
+    title: safeTitle,
+    fileType: (typeof fileType === 'string' ? fileType : storedFile.contentType).toUpperCase(),
+    fileSize: (storedFile.size / (1024 * 1024)).toFixed(2) + ' MB',
+    uploadedAt: now,
+    storagePath: storedFile.storagePath,
   };
 
   const updatedDeliverables = [...(order.deliverables || []), newDeliverable];
-
   const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
     if (step.id === 't5' || step.title.toLowerCase().includes('delivery') || step.title.toLowerCase().includes('completed')) {
       return {
         ...step,
         title: 'Completed & Delivered',
-        description: `Deliverable uploaded: ${newDeliverable.title}`,
+        description: 'Deliverable uploaded: ' + newDeliverable.title,
         status: 'completed' as const,
-        timestamp: 'Just now',
+        timestamp: now,
       };
     }
     return step;
@@ -1498,12 +1505,12 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
     progressPercent: 100,
     deliverables: updatedDeliverables,
     timeline: updatedTimeline,
-    updatedAt: 'Just now',
+    updatedAt: now,
   };
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
-  res.json({ success: true, message: 'Completed deliverable uploaded successfully.', order: updatedOrder });
+  res.json({ success: true, message: 'Completed deliverable uploaded successfully.', order: await withSignedFileLinks(updatedOrder) });
 });
 
 // Admin Private Notes
