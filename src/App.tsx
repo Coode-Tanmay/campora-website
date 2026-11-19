@@ -11,7 +11,6 @@ import { PortfolioSection } from './components/PortfolioSection';
 import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { OrderFormModal } from './components/OrderFormModal';
-import { OrderTrackingView } from './components/OrderTrackingView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLogin } from './components/AdminLogin';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
@@ -54,7 +53,8 @@ function AppContent() {
         combined.includes('/files') ||
         combined.includes('/profile') ||
         combined.includes('/account') ||
-        combined.includes('/customer-portal');
+        combined.includes('/customer-portal') ||
+        combined.includes('/tracking');
 
       if (isProtectedCustomerRoute) {
         if (isCustomer || isAdmin) {
@@ -79,8 +79,6 @@ function AppContent() {
         setCurrentTab('faq');
       } else if (combined.includes('/contact')) {
         setCurrentTab('contact');
-      } else if (combined.includes('/tracking')) {
-        setCurrentTab('tracking');
       }
     };
 
@@ -285,7 +283,7 @@ function AppContent() {
                 </div>
                 <h3 className="font-bold text-white text-base">Official Email</h3>
                 <a href="mailto:camporasupport@gmail.com" className="text-xs text-zinc-400 mt-1 inline-block hover:text-[#D4A72C] transition-colors">camporasupport@gmail.com</a>
-                <span className="inline-block mt-3 text-xs text-zinc-500">Response within 30 minutes</span>
+                <span className="inline-block mt-3 text-xs text-zinc-500">For order and account enquiries</span>
               </div>
             </div>
           </div>
@@ -329,26 +327,12 @@ function AppContent() {
           )
         )}
 
-        {/* Public Tracker */}
-        {currentTab === 'tracking' && (
-          <OrderTrackingView
-            orders={orders}
-            selectedOrderId={selectedOrderId}
-            onSelectOrder={(id) => setSelectedOrderId(id)}
-            onOpenNewOrderModal={() => handleOpenOrderModal()}
-            onUpdateOrderStatus={handleUpdateOrderStatus}
-          />
-        )}
       </main>
 
       {/* Footer */}
       <Footer
         onSelectTab={handleNavigateTab}
         onOpenOrderModal={() => handleOpenOrderModal()}
-        onOpenAdmin={() => {
-          setCurrentTab('admin');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
       />
 
       {/* Floating WhatsApp Quick Action Button */}
