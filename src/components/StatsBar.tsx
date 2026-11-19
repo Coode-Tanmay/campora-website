@@ -1,60 +1,28 @@
 import React from 'react';
-import { FileText, Users, Star, Clock } from 'lucide-react';
+import { FileText, GraduationCap, Clock, Palette } from 'lucide-react';
 
 export const StatsBar: React.FC = () => {
-  const stats = [
-    {
-      id: 'stat-docs',
-      value: '5,000+',
-      label: 'DOCUMENTS DELIVERED',
-      icon: FileText,
-      highlight: false,
-    },
-    {
-      id: 'stat-students',
-      value: '2,500+',
-      label: 'HAPPY STUDENTS',
-      icon: Users,
-      highlight: false,
-    },
-    {
-      id: 'stat-rating',
-      value: '4.9 ★',
-      label: 'AVERAGE RATING',
-      icon: Star,
-      highlight: true,
-    },
-    {
-      id: 'stat-support',
-      value: '18h',
-      label: 'DAILY SUPPORT (6AM - 12AM)',
-      icon: Clock,
-      highlight: false,
-    },
+  const highlights = [
+    { id: 'stat-presentations', value: 'Presentations', label: 'PPT DESIGN & FORMATTING', icon: FileText },
+    { id: 'stat-documentation', value: 'Documentation', label: 'REPORTS & WORD FILES', icon: GraduationCap },
+    { id: 'stat-design', value: 'Creative Design', label: 'POSTERS & CERTIFICATES', icon: Palette },
+    { id: 'stat-support', value: '6 AM – 12 AM', label: 'DAILY SUPPORT WINDOW', icon: Clock },
   ];
 
   return (
     <section className="border-y border-[#2A2A2A] bg-[#0B0B0B]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-10">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          {stats.map((stat, idx) => {
-            const Icon = stat.icon;
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 lg:py-8">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-7">
+          {highlights.map((item) => {
+            const Icon = item.icon;
             return (
-              <div
-                key={stat.id}
-                id={stat.id}
-                className={`flex flex-col items-center text-center p-4 rounded-xl transition-all ${
-                  stat.highlight ? 'bg-[#171717] border border-[#D4A72C]/30' : 'bg-transparent'
-                }`}
-              >
-                <div className="w-8 h-8 rounded-full bg-[#171717] border border-[#2A2A2A] flex items-center justify-center text-[#D4A72C] mb-2.5">
+              <div key={item.id} id={item.id} className="flex items-center justify-center gap-3 py-2">
+                <div className="w-10 h-10 shrink-0 rounded-xl bg-[#171717] border border-[#2A2A2A] flex items-center justify-center text-[#D4A72C]">
                   <Icon className="w-4 h-4" />
                 </div>
-                <div className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight font-['Outfit',sans-serif]">
-                  {stat.value}
-                </div>
-                <div className="text-[11px] sm:text-xs font-semibold text-[#B8B8B8] tracking-wider mt-1 uppercase">
-                  {stat.label}
+                <div className="min-w-0">
+                  <div className="text-sm sm:text-base font-bold text-white tracking-tight">{item.value}</div>
+                  <div className="text-[10px] sm:text-[11px] font-semibold text-[#858585] tracking-wider mt-1">{item.label}</div>
                 </div>
               </div>
             );

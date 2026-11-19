@@ -7,7 +7,7 @@ export const UPI_ID = 'tanmayvbhagat-1@oksbi';
 
 interface ManualPaymentSectionProps {
   order: CamporaOrder;
-  onPaymentSubmitted: (utrNumber: string, screenshotUrl: string) => Promise<void> | void;
+  onPaymentSubmitted: (utrNumber: string, screenshotUrl?: string) => Promise<void> | void;
 }
 
 export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
@@ -48,6 +48,11 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 500 * 1024) {
+        setError('Please choose a PNG or JPG screenshot under 500 KB.');
+        e.target.value = '';
+        return;
+      }
       setScreenshotName(file.name);
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -71,7 +76,7 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
 
     setIsSubmitting(true);
     try {
-      await onPaymentSubmitted(cleanUtr, screenshotPreview || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80');
+      await onPaymentSubmitted(cleanUtr, screenshotPreview || undefined);
     } catch (err: any) {
       setError(err.message || 'Failed to submit payment details.');
     } finally {

@@ -1,18 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import { randomBytes } from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { INITIAL_ORDERS } from './src/data/mockData';
+import { INITIAL_ORDERS, SERVICES_DATA } from './src/data/mockData';
 import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from './src/types';
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
@@ -37,9 +38,42 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
 }
 
 // Middlewares
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+app.disable('x-powered-by');
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
+
+// Reject cross-origin browser mutations. The frontend and API share the canonical APP_URL
+// through the Vercel rewrite, so state-changing requests must originate from that origin.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    next();
+    return;
+  }
+  const origin = req.get('origin');
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      if (!origin || new URL(origin).origin !== getRequestOrigin(req)) {
+        res.status(403).json({ error: 'Request origin could not be verified.' });
+        return;
+      }
+    } catch {
+      res.status(403).json({ error: 'Request origin could not be verified.' });
+      return;
+    }
+  }
+  next();
+});
 
 // Database-backed application state. The server keeps a short-lived in-process cache,
 // but every mutation is persisted to Supabase before the API reports success.
@@ -139,16 +173,46 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-function getRequestOrigin(req: Request): string {
-  if (req.query.origin && typeof req.query.origin === 'string' && (req.query.origin.startsWith('http://') || req.query.origin.startsWith('https://'))) {
-    return req.query.origin.replace(/\/$/, '');
+function getRequestOrigin(_req: Request): string {
+  const configuredUrl = process.env.APP_URL?.trim();
+  if (configuredUrl && configuredUrl !== 'MY_APP_URL') {
+    const parsed = new URL(configuredUrl);
+    if (parsed.protocol !== 'https:' && process.env.NODE_ENV === 'production') {
+      throw new Error('APP_URL must use HTTPS in production.');
+    }
+    return parsed.origin;
   }
-  if (process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL' && process.env.APP_URL.trim() !== '') {
-    return process.env.APP_URL.replace(/\/$/, '');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('APP_URL must be configured to the canonical public CAMPORA website origin.');
   }
-  const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
-  const proto = (req.headers['x-forwarded-proto'] as string) || (req.secure ? 'https' : 'http');
-  return `${proto}://${host}`;
+  return 'http://localhost:3000';
+}
+
+function createOAuthState(provider: 'google' | 'microsoft', origin: string): string {
+  return jwt.sign(
+    { provider, origin, nonce: randomBytes(32).toString('hex') },
+    JWT_SECRET,
+    { expiresIn: '10m', issuer: 'campora', audience: 'campora-oauth' },
+  );
+}
+
+function verifyOAuthState(
+  state: unknown,
+  cookieState: unknown,
+  provider: 'google' | 'microsoft',
+  expectedOrigin: string,
+): string {
+  if (typeof state !== 'string' || !state || typeof cookieState !== 'string' || !cookieState || state !== cookieState) {
+    throw new Error('OAuth state validation failed. Please restart sign-in.');
+  }
+  const payload = jwt.verify(state, JWT_SECRET, {
+    issuer: 'campora',
+    audience: 'campora-oauth',
+  }) as jwt.JwtPayload & { provider?: string; origin?: string; nonce?: string };
+  if (payload.provider !== provider || payload.origin !== expectedOrigin || !payload.nonce) {
+    throw new Error('OAuth state validation failed. Please restart sign-in.');
+  }
+  return payload.origin;
 }
 
 // Check OAuth Configuration Status
@@ -197,7 +261,8 @@ app.get('/api/auth/google/url', (req: Request, res: Response) => {
     return;
   }
 
-  const statePayload = Buffer.from(JSON.stringify({ origin, provider: 'google', t: Date.now() })).toString('base64url');
+  const statePayload = createOAuthState('google', origin);
+  res.cookie('campora_google_oauth_state', statePayload, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 10 * 60 * 1000 });
 
   const params = new URLSearchParams({
     client_id: googleClientId,
@@ -243,7 +308,8 @@ app.get('/api/auth/microsoft/url', (req: Request, res: Response) => {
     return;
   }
 
-  const statePayload = Buffer.from(JSON.stringify({ origin, provider: 'microsoft', t: Date.now() })).toString('base64url');
+  const statePayload = createOAuthState('microsoft', origin);
+  res.cookie('campora_microsoft_oauth_state', statePayload, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 10 * 60 * 1000 });
 
   const params = new URLSearchParams({
     client_id: msClientId,
@@ -319,17 +385,8 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
   }
 
   try {
-    let stateOrigin: string | null = null;
-    if (req.query.state && typeof req.query.state === 'string') {
-      try {
-        const parsed = JSON.parse(Buffer.from(req.query.state, 'base64url').toString('utf8'));
-        if (parsed.origin) stateOrigin = parsed.origin;
-      } catch {
-        // ignore parse error
-      }
-    }
-
-    const origin = stateOrigin || getRequestOrigin(req);
+    const origin = verifyOAuthState(req.query.state, req.cookies?.campora_google_oauth_state, 'google', getRequestOrigin(req));
+    res.clearCookie('campora_google_oauth_state', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
     const redirectUri = `${origin}/auth/callback/google`;
 
     // 1. Exchange authorization code for Google access token
@@ -404,7 +461,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
     res.cookie('campora_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -496,17 +553,8 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
   }
 
   try {
-    let stateOrigin: string | null = null;
-    if (req.query.state && typeof req.query.state === 'string') {
-      try {
-        const parsed = JSON.parse(Buffer.from(req.query.state, 'base64url').toString('utf8'));
-        if (parsed.origin) stateOrigin = parsed.origin;
-      } catch {
-        // ignore
-      }
-    }
-
-    const origin = stateOrigin || getRequestOrigin(req);
+    const origin = verifyOAuthState(req.query.state, req.cookies?.campora_microsoft_oauth_state, 'microsoft', getRequestOrigin(req));
+    res.clearCookie('campora_microsoft_oauth_state', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
     const redirectUri = `${origin}/auth/callback/microsoft`;
 
     const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -575,7 +623,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
     res.cookie('campora_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -646,7 +694,7 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
     res.cookie('campora_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -654,7 +702,6 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
       success: true,
       message: 'Admin authentication successful.',
       user: adminUser,
-      token,
     });
     return;
   }
@@ -725,14 +772,13 @@ app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
   res.cookie('campora_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   res.json({
     success: true,
     user: customerPayload,
-    token,
   });
 });
 
@@ -747,7 +793,7 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
   res.clearCookie('campora_session', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
   });
   res.json({ success: true, message: 'Logged out successfully.' });
 });
@@ -794,101 +840,116 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
   res.json({ order: user.role === 'admin' ? order : customerSafeOrder });
 });
 
-// Create new customer order with backend package discount enforcement
+// Create customer order. Price, discount and eligibility are always calculated server-side.
 app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
-  const user = req.user;
-  const data = req.body;
-
-  if (!data.customerName || !data.whatsappNumber || !data.topic || !data.serviceId) {
-    res.status(400).json({ error: 'Missing required order fields.' });
+  const user = req.user!;
+  if (user.role !== 'customer') {
+    res.status(403).json({ error: 'Only customer accounts can place orders.' });
     return;
   }
 
-  const isPackage = Boolean(data.isPackage || data.serviceId === 'internship-package');
-  let subtotal = Number(data.subtotal) || (isPackage ? 499 : 250);
-  let discount = Number(data.discount) || 0;
-  let couponCode = data.couponCode;
+  const data = req.body || {};
+  if (!data.customerName?.trim() || !data.whatsappNumber?.trim() || !data.topic?.trim() || !data.serviceId) {
+    res.status(400).json({ error: 'Please complete your name, WhatsApp number, service and topic.' });
+    return;
+  }
 
-  // STRICT PACKAGE DISCOUNT RULE ENFORCEMENT ON BACKEND:
-  // Complete Internship Package (₹499) is NOT eligible for discount codes.
-  if (isPackage) {
+  const service = SERVICES_DATA.find((item) => item.id === data.serviceId);
+  if (!service) {
+    res.status(400).json({ error: 'Please select a valid CAMPORA service.' });
+    return;
+  }
+
+  const pagesOrSlides = Number(data.pagesOrSlides);
+  if (!Number.isInteger(pagesOrSlides) || pagesOrSlides < 1 || pagesOrSlides > 200) {
+    res.status(400).json({ error: 'Please provide a valid page or slide count.' });
+    return;
+  }
+
+  const isPackage = service.id === 'internship-package';
+  const requiresReview = service.pricingType === 'variable'
+    || Boolean(service.maxIncludedPages && pagesOrSlides > service.maxIncludedPages)
+    || Boolean(data.hasCollegeTemplate);
+
+  const subtotal = Number(service.price) || 0;
+  const requestedCode = typeof data.couponCode === 'string' ? data.couponCode.trim().toUpperCase() : '';
+  let discount = 0;
+  let couponCode: string | undefined;
+
+  if (!isPackage && subtotal >= 250) {
+    if (requestedCode === 'CAMPORA100' || requestedCode === 'CAMPORA123') {
+      discount = 100;
+      couponCode = requestedCode;
+    } else if (requestedCode === 'ALEX20CMP') {
+      discount = Math.round(subtotal * 0.2);
+      couponCode = requestedCode;
+    }
+  }
+
+  // Variable-price services and oversized work are quoted by the admin.
+  if (requiresReview || isPackage) {
     discount = 0;
     couponCode = undefined;
-    subtotal = 499;
   }
 
   const total = Math.max(0, subtotal - discount);
-
-  const orderId = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
-  const nowStr = 'Just now';
+  const now = new Date().toISOString();
+  const orderId = `CMP-${Date.now().toString().slice(-8)}`;
 
   const newOrder: CamporaOrder = {
     id: orderId,
-    customerId: user?.id || `guest-${Date.now()}`,
+    customerId: user.id,
     customerName: data.customerName.trim(),
-    customerEmail: data.customerEmail?.trim() || user?.email || `${data.customerName.toLowerCase().replace(/\s+/g, '')}@student.edu`,
+    customerEmail: user.email,
     whatsappNumber: data.whatsappNumber.trim(),
-    college: data.college?.trim() || 'University Student',
-    serviceId: data.serviceId,
-    serviceName: data.serviceName || 'Academic Service',
+    college: data.college?.trim() || user.college || 'Not provided',
+    serviceId: service.id,
+    serviceName: service.title,
     isPackage,
-    pricingType: data.pricingType || (data.serviceId === 'urgent-ppt' ? 'variable' : 'fixed'),
+    pricingType: service.pricingType,
     topic: data.topic.trim(),
-    pagesOrSlides: Number(data.pagesOrSlides) || 15,
-    deadline: data.deadline || 'Standard (24-48 hrs)',
-    instructions: data.instructions || '',
+    pagesOrSlides,
+    deadline: typeof data.deadline === 'string' ? data.deadline : 'Standard (24-48 hrs)',
+    instructions: typeof data.instructions === 'string' ? data.instructions.slice(0, 10000) : '',
     hasCollegeTemplate: Boolean(data.hasCollegeTemplate),
     collegeTemplateFile: data.collegeTemplateFile,
-    templateInstructions: data.templateInstructions,
-    referenceFiles: data.referenceFiles || [],
+    templateInstructions: typeof data.templateInstructions === 'string' ? data.templateInstructions.slice(0, 5000) : undefined,
+    referenceFiles: Array.isArray(data.referenceFiles) ? data.referenceFiles.slice(0, 10) : [],
     subtotal,
-    finalPrice: subtotal,
+    finalPrice: total,
     discount,
-    discountEligible: !isPackage,
+    discountEligible: !isPackage && !requiresReview,
     couponCode,
     total,
-    quoteStatus: data.pricingType === 'variable' ? 'pending' : 'not_required',
-    paymentStatus: 'pending',
-    status: 'new_order',
-    requiresReview: data.pricingType === 'variable' || isPackage || Boolean(data.hasCollegeTemplate),
-    reviewReason: data.pricingType === 'variable' ? 'Urgent / Variable scope review required.' : 'New order awaiting admin review.',
+    quoteStatus: requiresReview ? 'pending' : 'not_required',
+    paymentStatus: requiresReview ? 'awaiting_quote' : 'pending',
+    status: requiresReview ? 'requirements_review' : 'new_order',
+    requiresReview,
+    reviewReason: requiresReview ? 'Order requires review before payment.' : undefined,
     progressPercent: 10,
-    createdAt: nowStr,
-    updatedAt: nowStr,
-    estimatedDelivery: data.deadline?.includes('1-3') ? 'In 3 Hours' : 'In 24-48 Hours',
+    createdAt: now,
+    updatedAt: now,
+    estimatedDelivery: 'To be confirmed',
     timeline: [
-      { id: 't1', title: 'Order Submitted', description: 'Brief and files received by CAMPORA desk', timestamp: nowStr, status: 'completed' },
-      { id: 't2', title: 'Admin Review & Approval', description: 'Lead editor is reviewing academic guidelines', status: 'current' },
-      { id: 't3', title: 'Payment Verification', description: 'UPI payment confirmation', status: 'pending' },
-      { id: 't4', title: 'Work In Progress', description: 'Designer drafting initial deliverables', status: 'pending' },
-      { id: 't5', title: 'Quality Assurance & Delivery', description: 'Final plagiarism check and downloadable delivery', status: 'pending' },
+      { id: 't1', title: 'Order Submitted', description: 'Your order has been received by CAMPORA', timestamp: now, status: 'completed' },
+      { id: 't2', title: 'Requirements Review', description: 'CAMPORA is reviewing your order details', timestamp: now, status: 'current' },
+      { id: 't3', title: 'Payment', description: requiresReview ? 'Payment details will be available after review' : 'Awaiting payment', status: 'pending' },
+      { id: 't4', title: 'Work In Progress', description: 'Work begins after payment verification', status: 'pending' },
+      { id: 't5', title: 'Quality Review & Delivery', description: 'Your completed files will appear here', status: 'pending' },
     ],
     deliverables: [],
   };
 
   ordersStore.unshift(newOrder);
-
-  // If customer is authenticated, also sync to their user profile
-  if (user && !usersStore.find((u) => u.id === user.id)) {
-    usersStore.push({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: 'customer',
-      whatsapp: user.whatsapp,
-      college: user.college,
-    });
-  }
-
   await persistState();
   res.status(201).json({ success: true, order: newOrder });
 });
 
-// Customer submits UPI payment proof (UTR and screenshot)
+// Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
 app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
-  const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body;
+  const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body || {};
 
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
   if (orderIndex === -1) {
@@ -897,30 +958,45 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   }
 
   const order = ordersStore[orderIndex];
-
-  // Ownership check
-  if (user.role !== 'admin' && order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase()) {
-    res.status(403).json({ error: 'Access Denied: You cannot submit payment for another customer order.' });
+  if (user.role !== 'customer' || (order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase())) {
+    res.status(403).json({ error: 'You cannot submit payment for this order.' });
     return;
   }
 
-  if (!utrNumber || !utrNumber.trim()) {
-    res.status(400).json({ error: 'Please provide a valid UPI Reference / UTR Number.' });
+  if (order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review' || order.status === 'cancelled' || order.status === 'rejected' || order.status === 'completed') {
+    res.status(409).json({ error: 'This order is not ready to accept payment. Wait for the CAMPORA team to confirm the quote or order status.' });
+    return;
+  }
+  if (!['pending', 'rejected'].includes(order.paymentStatus)) {
+    res.status(409).json({ error: 'Payment proof has already been submitted or the payment is confirmed.' });
     return;
   }
 
-  const payableAmount = order.finalPrice || order.total;
+  const cleanUtr = typeof utrNumber === 'string' ? utrNumber.trim().replace(/\s+/g, '') : '';
+  if (!/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) {
+    res.status(400).json({ error: 'Please provide a valid UPI reference / UTR number.' });
+    return;
+  }
 
-  // IMPORTANT: Uploading a payment screenshot must NOT automatically mark the order as paid.
-  // It transitions to 'verification_pending' until Admin verifies.
+  let safeScreenshotUrl: string | undefined;
+  if (typeof screenshotUrl === 'string' && screenshotUrl.trim()) {
+    if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(screenshotUrl) || screenshotUrl.length > 700000) {
+      res.status(400).json({ error: 'Payment screenshot must be a PNG or JPG image under 500 KB.' });
+      return;
+    }
+    safeScreenshotUrl = screenshotUrl;
+  }
+
+  const payableAmount = order.finalPrice ?? order.total;
+  const now = new Date().toISOString();
   const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
     if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
       return {
         ...step,
         title: 'Payment Verification Pending',
-        description: `Student submitted UTR: ${utrNumber.trim()}. CAMPORA Admin is verifying with SBI statement.`,
+        description: 'Payment reference submitted. CAMPORA is checking the transaction.',
         status: 'current' as const,
-        timestamp: 'Just now',
+        timestamp: now,
       };
     }
     return step;
@@ -932,22 +1008,22 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     status: 'verification_pending',
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
-      utrNumber: utrNumber.trim(),
-      screenshotUrl: screenshotUrl || undefined,
-      screenshotName: screenshotName || 'Payment_Proof.png',
-      screenshotSize: screenshotSize || '320 KB',
-      submittedAt: 'Today, Just now',
+      utrNumber: cleanUtr,
+      screenshotUrl: safeScreenshotUrl,
+      screenshotName: safeScreenshotUrl ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
+      screenshotSize: safeScreenshotUrl && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
+      submittedAt: now,
       amountPaid: payableAmount,
     },
     timeline: updatedTimeline,
-    updatedAt: 'Just now',
+    updatedAt: now,
   };
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
 
   const { adminNotes, ...customerSafeOrder } = updatedOrder;
-  res.json({ success: true, message: 'Payment proof submitted. Admin will verify shortly.', order: customerSafeOrder });
+  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
 });
 
 // Customer profile & stats
@@ -1128,8 +1204,17 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   const order = ordersStore[orderIndex];
-  const payableAmount = order.finalPrice || order.total;
-  const now = 'Today, Just now';
+  if (action === 'confirm' && (order.paymentStatus !== 'verification_pending' || !order.paymentDetails?.utrNumber)) {
+    res.status(409).json({ error: 'A submitted payment reference must be verified before confirming payment.' });
+    return;
+  }
+  if (action === 'reject' && order.paymentStatus !== 'verification_pending') {
+    res.status(409).json({ error: 'There is no submitted payment proof to reject.' });
+    return;
+  }
+
+  const payableAmount = order.finalPrice ?? order.total;
+  const now = new Date().toISOString();
 
   if (action === 'confirm') {
     const utr = order.paymentDetails?.utrNumber || 'MANUAL-ADMIN-CONFIRMED';
@@ -1172,7 +1257,11 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   if (action === 'reject') {
-    const reason = rejectionReason?.trim() || 'Payment could not be verified in bank records. Please re-check UTR and receipt.';
+    const reason = rejectionReason?.trim();
+    if (!reason) {
+      res.status(400).json({ error: 'A reason is required when rejecting payment proof.' });
+      return;
+    }
     const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
       if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
         return {

@@ -19,7 +19,6 @@ import { CustomerPortal } from './components/CustomerPortal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder } from './types';
-import { INITIAL_ORDERS } from './data/mockData';
 import { api } from './services/api';
 import { CheckCircle2, MessageCircle, Mail, Phone, Clock, MapPin } from 'lucide-react';
 
@@ -29,8 +28,8 @@ function AppContent() {
   const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [selectedServiceForOrder, setSelectedServiceForOrder] = useState<string | undefined>(undefined);
-  const [orders, setOrders] = useState<CamporaOrder[]>(INITIAL_ORDERS);
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(INITIAL_ORDERS[0]?.id || 'CMP-1024');
+  const [orders, setOrders] = useState<CamporaOrder[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Handle URL path routing and protect customer/admin pages
@@ -119,6 +118,12 @@ function AppContent() {
   };
 
   const handleOpenOrderModal = (serviceId?: string) => {
+    if (!isCustomer && !isAdmin) {
+      setSelectedServiceForOrder(serviceId);
+      setIsAuthModalOpen(true);
+      showToast('Please sign in before placing an order.');
+      return;
+    }
     setSelectedServiceForOrder(serviceId);
     setIsOrderModalOpen(true);
   };
@@ -139,26 +144,17 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleOrderCreated = async (newOrder: CamporaOrder) => {
-    try {
-      const res = await api.createOrder({
-        ...newOrder,
-        customerId: user?.id,
-        customerEmail: user?.email || `${newOrder.customerName.toLowerCase().replace(/\s+/g, '')}@campora.in`,
-      });
-      setOrders([res.order || newOrder, ...orders]);
-      setSelectedOrderId(newOrder.id);
-    } catch {
-      setOrders([newOrder, ...orders]);
-      setSelectedOrderId(newOrder.id);
-    }
-    
-    if (isCustomer) {
-      setCurrentTab('customer-portal');
-    } else {
-      setCurrentTab('tracking');
-    }
-    showToast(`Order #${newOrder.id} logged successfully! Live tracking active.`);
+  const handleOrderCreated = async (newOrder: CamporaOrder): Promise<CamporaOrder> => {
+    const res = await api.createOrder({
+      ...newOrder,
+      customerId: user?.id,
+      customerEmail: user?.email,
+    });
+    setOrders((previous) => [res.order, ...previous]);
+    setSelectedOrderId(res.order.id);
+    setCurrentTab('customer-portal');
+    showToast(`Order #${res.order.id} successfully saved.`);
+    return res.order;
   };
 
   const handleUpdateOrderStatus = (orderId: string, updates: Partial<CamporaOrder>) => {
