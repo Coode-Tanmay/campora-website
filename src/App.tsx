@@ -28,7 +28,6 @@ function AppContent() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [selectedServiceForOrder, setSelectedServiceForOrder] = useState<string | undefined>(undefined);
   const [orders, setOrders] = useState<CamporaOrder[]>([]);
-  const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Handle URL path routing and protect customer/admin pages
@@ -149,17 +148,9 @@ function AppContent() {
       customerEmail: user?.email,
     });
     setOrders((previous) => [res.order, ...previous]);
-    setSelectedOrderId(res.order.id);
     setCurrentTab('customer-portal');
     showToast(`Order #${res.order.id} successfully saved.`);
     return res.order;
-  };
-
-  const handleUpdateOrderStatus = (orderId: string, updates: Partial<CamporaOrder>) => {
-    setOrders((prev) =>
-      prev.map((ord) => (ord.id === orderId ? { ...ord, ...updates } : ord))
-    );
-    showToast(`Order #${orderId} updated!`);
   };
 
   const activeOrdersCount = orders.filter((o) => o.status !== 'completed').length;
