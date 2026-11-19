@@ -3,6 +3,14 @@
     {
       "source": "/api/:path*",
       "destination": "https://campora-website.onrender.com/api/:path*"
+    },
+    {
+      "source": "/auth/callback/:path*",
+      "destination": "https://campora-website.onrender.com/auth/callback/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
