@@ -53,6 +53,28 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 
+// Reject cross-origin browser mutations. The frontend and API share the canonical APP_URL
+// through the Vercel rewrite, so state-changing requests must originate from that origin.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    next();
+    return;
+  }
+  const origin = req.get('origin');
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      if (!origin || new URL(origin).origin !== getRequestOrigin(req)) {
+        res.status(403).json({ error: 'Request origin could not be verified.' });
+        return;
+      }
+    } catch {
+      res.status(403).json({ error: 'Request origin could not be verified.' });
+      return;
+    }
+  }
+  next();
+});
+
 // Database-backed application state. The server keeps a short-lived in-process cache,
 // but every mutation is persisted to Supabase before the API reports success.
 let ordersStore: CamporaOrder[] = [];
@@ -364,6 +386,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
 
   try {
     const origin = verifyOAuthState(req.query.state, req.cookies?.campora_google_oauth_state, 'google', getRequestOrigin(req));
+    res.clearCookie('campora_google_oauth_state', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
     const redirectUri = `${origin}/auth/callback/google`;
 
     // 1. Exchange authorization code for Google access token
@@ -531,6 +554,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 
   try {
     const origin = verifyOAuthState(req.query.state, req.cookies?.campora_microsoft_oauth_state, 'microsoft', getRequestOrigin(req));
+    res.clearCookie('campora_microsoft_oauth_state', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
     const redirectUri = `${origin}/auth/callback/microsoft`;
 
     const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
