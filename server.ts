@@ -1518,11 +1518,12 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
         fileType: ord.collegeTemplateFile.type,
         size: ord.collegeTemplateFile.size,
         uploadedAt: ord.collegeTemplateFile.uploadedAt || ord.createdAt,
+        downloadUrl: ord.collegeTemplateFile.storagePath ? await createPrivateSignedUrl(ord.collegeTemplateFile.storagePath) : undefined,
       });
     }
 
     if (ord.referenceFiles?.length) {
-      ord.referenceFiles.forEach((rf) => {
+      for (const rf of ord.referenceFiles) {
         files.push({
           id: rf.id,
           orderId: ord.id,
@@ -1532,8 +1533,9 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
           fileType: rf.type,
           size: rf.size,
           uploadedAt: rf.uploadedAt || ord.createdAt,
+          downloadUrl: rf.storagePath ? await createPrivateSignedUrl(rf.storagePath) : undefined,
         });
-      });
+      }
     }
 
     if (ord.paymentDetails?.screenshotUrl || ord.paymentDetails?.screenshotStoragePath || ord.paymentDetails?.screenshotName) {
