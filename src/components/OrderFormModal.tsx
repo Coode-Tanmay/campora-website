@@ -34,7 +34,7 @@ interface OrderFormModalProps {
   onClose: () => void;
   initialServiceId?: string;
   initialTemplateMode?: boolean;
-  onOrderCreated: (newOrder: CamporaOrder) => void;
+  onOrderCreated: (newOrder: CamporaOrder) => Promise<CamporaOrder>;
 }
 
 export const OrderFormModal: React.FC<OrderFormModalProps> = ({
@@ -59,16 +59,16 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [serviceId, setServiceId] = useState(initialServiceId || 'premium-ppt');
 
   // Step 2: Student Details
-  const [fullName, setFullName] = useState('Alex Carter');
-  const [whatsappNumber, setWhatsappNumber] = useState('+91 75592 25529');
-  const [college, setCollege] = useState('Vellore Institute of Technology');
+  const [fullName, setFullName] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [college, setCollege] = useState('');
 
   // Step 3: Work Details
-  const [topic, setTopic] = useState('Cloud Computing Architecture & Edge Intelligence');
-  const [pagesOrSlides, setPagesOrSlides] = useState<number>(18);
+  const [topic, setTopic] = useState('');
+  const [pagesOrSlides, setPagesOrSlides] = useState<number>(1);
   const [deadline, setDeadline] = useState('Standard (24-48 hrs)');
   const [requirements, setRequirements] = useState(
-    'Please include high-contrast diagrams of hybrid cloud topology and IoT edge nodes. Keep the theme dark & gold with academic references.'
+    ''
   );
 
   // Step 4: College/University Template Support
@@ -85,16 +85,13 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   );
 
   // Step 5: Reference Material (Separate from template)
-  const [referenceFiles, setReferenceFiles] = useState<OrderAttachment[]>([
-    { id: 'att-1', name: 'Edge_Computing_Syllabus_Guidelines.pdf', size: '1.4 MB', type: 'application/pdf', uploadedAt: 'Just now' },
-    { id: 'att-2', name: 'Raw_Research_Notes.docx', size: '320 KB', type: 'application/docx', uploadedAt: 'Just now' },
-  ]);
+  const [referenceFiles, setReferenceFiles] = useState<OrderAttachment[]>([]);
 
   // Step 7 & 8: Pricing & Payment
-  const [couponCode, setCouponCode] = useState('CAMPORA100');
-  const [appliedDiscount, setAppliedDiscount] = useState(50);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState(0);
   const [couponError, setCouponError] = useState('');
-  const [couponSuccess, setCouponSuccess] = useState('Code CAMPORA100 applied: ₹50 OFF');
+  const [couponSuccess, setCouponSuccess] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'whatsapp'>('upi');
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderCompletedSuccess, setOrderCompletedSuccess] = useState(false);
@@ -275,120 +272,63 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     }
   };
 
-  const handleFinalSubmit = () => {
+  const handleFinalSubmit = async () => {
     setIsProcessing(true);
     setStepError('');
 
-    setTimeout(() => {
-      const newOrderId = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
+    const initialStatus: OrderStatus = requiresAdminReview ? 'requirements_review' : 'new_order';
+    const initialQuoteStatus: QuoteStatus = requiresAdminReview ? 'pending' : 'not_required';
+    const initialPaymentStatus: PaymentStatus = requiresAdminReview ? 'awaiting_quote' : 'pending';
 
-      // Determine initial status based on review requirements
-      let initialStatus: OrderStatus = 'in_progress';
-      let initialQuoteStatus: QuoteStatus = 'not_required';
-      let initialPaymentStatus: PaymentStatus = 'paid';
-      let progress = 35;
+    const newOrder: CamporaOrder = {
+      id: `CMP-${Date.now()}`,
+      customerId: '',
+      customerEmail: '',
+      customerName: fullName.trim(),
+      whatsappNumber: whatsappNumber.trim(),
+      college: college.trim(),
+      serviceId: currentService.id,
+      serviceName: currentService.title,
+      pricingType: currentService.pricingType,
+      topic: topic.trim(),
+      pagesOrSlides,
+      deadline,
+      instructions: requirements.trim(),
+      hasCollegeTemplate,
+      collegeTemplateFile: hasCollegeTemplate ? (collegeTemplateFile || undefined) : undefined,
+      templateInstructions: hasCollegeTemplate ? templateInstructions : undefined,
+      referenceFiles,
+      subtotal: calculatedSubtotal,
+      finalPrice: finalTotal,
+      discount: appliedDiscount,
+      couponCode: appliedDiscount > 0 ? couponCode : undefined,
+      total: finalTotal,
+      quoteStatus: initialQuoteStatus,
+      paymentStatus: initialPaymentStatus,
+      status: initialStatus,
+      requiresReview: requiresAdminReview,
+      reviewReason: isOverLimit
+        ? `Page count (${pagesOrSlides}) exceeds 20 limit.`
+        : isVariableService
+        ? 'Variable service requiring custom quote.'
+        : undefined,
+      progressPercent: 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      estimatedDelivery: deadline.includes('1-3') ? 'In 3 hours' : 'In 24-48 hours',
+      timeline: [],
+      deliverables: [],
+    };
 
-      if (requiresAdminReview) {
-        initialStatus = 'requirements_review';
-        initialQuoteStatus = 'pending';
-        initialPaymentStatus = 'awaiting_quote';
-        progress = 20;
-      }
-
-      const timelineSteps = [
-        {
-          id: 't1',
-          title: 'Order Received',
-          description: `Logged with brief for ${currentService.title}`,
-          timestamp: 'Just now',
-          status: 'completed' as const
-        },
-        {
-          id: 't2',
-          title: 'Requirements Review',
-          description: requiresAdminReview
-            ? 'Specialist reviewing scope & custom turnaround'
-            : (hasCollegeTemplate ? 'University template verified by academic lead' : 'Specifications confirmed'),
-          timestamp: 'Just now',
-          status: 'completed' as const
-        },
-        {
-          id: 't3',
-          title: requiresAdminReview ? 'Quote / Pricing Sent' : 'Payment Confirmed',
-          description: requiresAdminReview
-            ? 'Quote details will be sent via WhatsApp & Dashboard'
-            : `Payment of ₹${finalTotal} verified via ${paymentMethod.toUpperCase()}`,
-          timestamp: requiresAdminReview ? 'Active Now' : 'Just now',
-          status: requiresAdminReview ? ('current' as const) : ('completed' as const)
-        },
-        {
-          id: 't4',
-          title: 'Work In Progress',
-          description: hasCollegeTemplate
-            ? 'Specialist is crafting document inside your college template'
-            : 'Specialist is crafting customized academic document',
-          timestamp: requiresAdminReview ? undefined : 'Active Now',
-          status: requiresAdminReview ? ('pending' as const) : ('current' as const)
-        },
-        {
-          id: 't5',
-          title: 'Quality & Plagiarism Review',
-          description: 'Grammar, citations, and 0% plagiarism check',
-          status: 'pending' as const
-        },
-        {
-          id: 't6',
-          title: 'Completed & Delivered',
-          description: 'Ready for download and submission',
-          status: 'pending' as const
-        },
-      ];
-
-      const newOrder: CamporaOrder = {
-        id: newOrderId,
-        customerId: `cust-${Date.now()}`,
-        customerEmail: `${(fullName || 'student').toLowerCase().replace(/\s+/g, '')}@campora.in`,
-        customerName: fullName || 'Student',
-        whatsappNumber: whatsappNumber || '+91 75592 25529',
-        college: college || 'University',
-        serviceId: currentService.id,
-        serviceName: currentService.title,
-        pricingType: currentService.pricingType,
-        topic: topic || 'Academic Project',
-        pagesOrSlides: pagesOrSlides,
-        deadline: deadline,
-        instructions: requirements,
-        hasCollegeTemplate: hasCollegeTemplate,
-        collegeTemplateFile: hasCollegeTemplate ? (collegeTemplateFile || undefined) : undefined,
-        templateInstructions: hasCollegeTemplate ? templateInstructions : undefined,
-        referenceFiles: referenceFiles,
-        subtotal: calculatedSubtotal,
-        finalPrice: calculatedSubtotal,
-        discount: appliedDiscount,
-        couponCode: appliedDiscount > 0 ? couponCode : undefined,
-        total: finalTotal,
-        quoteStatus: initialQuoteStatus,
-        paymentStatus: initialPaymentStatus,
-        status: initialStatus,
-        requiresReview: requiresAdminReview,
-        reviewReason: isOverLimit
-          ? `Page count (${pagesOrSlides}) exceeds 20 limit.`
-          : isVariableService
-          ? 'Variable service requiring custom quote.'
-          : undefined,
-        progressPercent: progress,
-        createdAt: 'Just now',
-        updatedAt: 'Just now',
-        estimatedDelivery: deadline.includes('1-3') ? 'In 3 hours' : 'Tomorrow, 06:00 PM',
-        timeline: timelineSteps,
-        deliverables: [],
-      };
-
-      setCreatedOrderSummary(newOrder);
-      setIsProcessing(false);
+    try {
+      const savedOrder = await onOrderCreated(newOrder);
+      setCreatedOrderSummary(savedOrder);
       setOrderCompletedSuccess(true);
-      onOrderCreated(newOrder);
-    }, 1200);
+    } catch (error: any) {
+      setStepError(error?.message || 'We could not save your order. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleFinishAndClose = () => {
