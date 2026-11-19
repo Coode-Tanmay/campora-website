@@ -11,15 +11,11 @@ class ApiError extends Error {
 }
 
 async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem('campora_token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   const res = await fetch(url, {
     ...options,
@@ -91,9 +87,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     });
-    if (res.token) {
-      localStorage.setItem('campora_token', res.token);
-    }
     return res;
   },
 
@@ -102,9 +95,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    if (res.token) {
-      localStorage.setItem('campora_token', res.token);
-    }
     return res;
   },
 
@@ -113,14 +103,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    if (res.token) {
-      localStorage.setItem('campora_token', res.token);
-    }
     return res;
   },
 
   async logout(): Promise<void> {
-    localStorage.removeItem('campora_token');
     await fetchJson(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
   },
 

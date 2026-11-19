@@ -4,6 +4,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { INITIAL_ORDERS } from './src/data/mockData';
 import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from './src/types';
@@ -20,19 +21,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-  throw new Error('Missing Supabase environment variables.');
+  throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY. Configure the server-side Supabase secret key.');
 }
 
-const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_SECRET_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  }
-);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 // Fail closed: never run with default or hard-coded production credentials.
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -47,45 +41,45 @@ app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(cookieParser());
 
-// In-Memory Database Store for Production Simulation
-let ordersStore: CamporaOrder[] = JSON.parse(JSON.stringify(INITIAL_ORDERS));
+// Database-backed application state. The server keeps a short-lived in-process cache,
+// but every mutation is persisted to Supabase before the API reports success.
+let ordersStore: CamporaOrder[] = [];
+interface StoredUser extends AuthUser { passwordHash?: string; }
+let usersStore: StoredUser[] = [];
+let stateWriteQueue: Promise<unknown> = Promise.resolve();
 
-interface StoredUser extends AuthUser {
-  passwordHash?: string;
+async function loadPersistentState(): Promise<void> {
+  const { data, error } = await supabase
+    .from('campora_app_state')
+    .select('orders, users')
+    .eq('id', 'primary')
+    .maybeSingle();
+  if (error) throw new Error(`Unable to load CAMPORA data from Supabase: ${error.message}`);
+  if (data) {
+    ordersStore = Array.isArray(data.orders) ? data.orders as CamporaOrder[] : [];
+    usersStore = Array.isArray(data.users) ? data.users as StoredUser[] : [];
+    return;
+  }
+  // Start with no fake customers or sample orders in production.
+  ordersStore = process.env.NODE_ENV === 'production' ? [] : JSON.parse(JSON.stringify(INITIAL_ORDERS));
+  usersStore = [];
+  await persistState();
 }
 
-let usersStore: StoredUser[] = [
-  {
-    id: 'cust-alex-1',
-    name: 'Alex Carter',
-    email: 'alex.carter@vit.ac.in',
-    role: 'customer',
-    whatsapp: '+91 75592 25529',
-    college: 'Vellore Institute of Technology',
-    authProvider: 'email',
-    createdAt: '2026-01-15',
-  },
-  {
-    id: 'cust-priya-2',
-    name: 'Priya Sharma',
-    email: 'priya.sharma@srm.edu.in',
-    role: 'customer',
-    whatsapp: '+91 98765 43210',
-    college: 'SRM Institute of Science and Technology',
-    authProvider: 'google',
-    createdAt: '2026-02-01',
-  },
-  {
-    id: 'cust-rohit-3',
-    name: 'Rohit Verma',
-    email: 'rohit.verma@bits-pilani.ac.in',
-    role: 'customer',
-    whatsapp: '+91 91234 56780',
-    college: 'BITS Pilani',
-    authProvider: 'microsoft',
-    createdAt: '2026-02-20',
-  },
-];
+async function persistState(): Promise<void> {
+  const snapshot = {
+    id: 'primary',
+    orders: ordersStore,
+    users: usersStore,
+    updated_at: new Date().toISOString(),
+  };
+  // Serialize writes so concurrent requests cannot complete out of order.
+  stateWriteQueue = stateWriteQueue.then(async () => {
+    const { error } = await supabase.from('campora_app_state').upsert(snapshot, { onConflict: 'id' });
+    if (error) throw new Error(`Unable to save CAMPORA data to Supabase: ${error.message}`);
+  });
+  await stateWriteQueue;
+}
 
 // Helper: Extract & Verify JWT
 interface RequestWithUser extends Request {
@@ -295,7 +289,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorDesc)} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorDesc)} }, window.location.origin);
               setTimeout(() => { window.close(); }, 800);
             } else {
               setTimeout(() => { window.location.href = '/login'; }, 1500);
@@ -381,6 +375,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
         createdAt: new Date().toISOString().split('T')[0],
       };
       usersStore.push(newCustomer);
+      await persistState();
       user = newCustomer;
     } else {
       if (profile.picture) user.avatar = profile.picture;
@@ -391,6 +386,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
     }
 
     // Strictly enforce customer role for Google authentication
+    await persistState();
     const customerPayload: AuthUser = {
       id: user.id,
       name: user.name,
@@ -407,8 +403,8 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
 
     res.cookie('campora_session', token, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -430,9 +426,9 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
             </div>
           </div>
           <script>
-            const authPayload = ${JSON.stringify({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload, token })};
+            const authPayload = ${JSON.stringify({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload })};
             if (window.opener) {
-              window.opener.postMessage(authPayload, '*');
+              window.opener.postMessage(authPayload, window.location.origin);
               setTimeout(() => { window.close(); }, 500);
             } else {
               setTimeout(() => { window.location.href = '/dashboard'; }, 800);
@@ -454,7 +450,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(err.message || 'Google OAuth verification failed.')} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(err.message || 'Google OAuth verification failed.')} }, window.location.origin);
               setTimeout(() => { window.close(); }, 2500);
             } else {
               setTimeout(() => { window.location.href = '/dashboard'; }, 3000);
@@ -481,7 +477,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorDesc)} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorDesc)} }, window.location.origin);
               setTimeout(() => { window.close(); }, 800);
             } else {
               setTimeout(() => { window.location.href = '/login'; }, 1500);
@@ -552,6 +548,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
         createdAt: new Date().toISOString().split('T')[0],
       };
       usersStore.push(newCustomer);
+      await persistState();
       user = newCustomer;
     } else {
       if (profile.displayName && (!user.name || user.name === email.split('@')[0])) {
@@ -560,6 +557,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
       user.authProvider = 'microsoft';
     }
 
+    await persistState();
     const customerPayload: AuthUser = {
       id: user.id,
       name: user.name,
@@ -576,8 +574,8 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 
     res.cookie('campora_session', token, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -591,9 +589,9 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
             <p style="color:#a1a1aa;font-size:13px;margin:0 0 20px 0;">Signed in via Microsoft (${escapeHtml(customerPayload.email)})</p>
           </div>
           <script>
-            const authPayload = ${JSON.stringify({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload, token })};
+            const authPayload = ${JSON.stringify({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload })};
             if (window.opener) {
-              window.opener.postMessage(authPayload, '*');
+              window.opener.postMessage(authPayload, window.location.origin);
               setTimeout(() => { window.close(); }, 500);
             } else {
               setTimeout(() => { window.location.href = '/dashboard'; }, 800);
@@ -614,7 +612,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(err.message || 'Microsoft OAuth verification failed.')} }, '*');
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(err.message || 'Microsoft OAuth verification failed.')} }, window.location.origin);
               setTimeout(() => { window.close(); }, 2500);
             }
           </script>
@@ -625,7 +623,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 });
 
 // Admin Login (Strictly separate from Customer Google Auth)
-app.post('/api/auth/admin/login', (req: Request, res: Response) => {
+app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -647,8 +645,8 @@ app.post('/api/auth/admin/login', (req: Request, res: Response) => {
 
     res.cookie('campora_session', token, {
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -665,11 +663,15 @@ app.post('/api/auth/admin/login', (req: Request, res: Response) => {
 });
 
 // Customer Email/Password Login & Register
-app.post('/api/auth/customer/login', (req: Request, res: Response) => {
+app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
   const { email, password, name, whatsapp, college } = req.body;
 
-  if (!email) {
-    res.status(400).json({ error: 'Email is required.' });
+  if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
+    res.status(400).json({ error: 'A valid email and password are required.' });
+    return;
+  }
+  if (password.length < 8) {
+    res.status(400).json({ error: 'Password must contain at least 8 characters.' });
     return;
   }
 
@@ -677,24 +679,34 @@ app.post('/api/auth/customer/login', (req: Request, res: Response) => {
   let user = usersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
 
   if (!user) {
-    // Register new customer
+    if (!name?.trim()) {
+      res.status(400).json({ error: 'Name is required when creating a customer account.' });
+      return;
+    }
     const newCustomer: StoredUser = {
       id: `cust-${Date.now()}`,
-      name: name?.trim() || normalizedEmail.split('@')[0],
+      name: name.trim(),
       email: normalizedEmail,
-      role: 'customer', // STRICT ENFORCEMENT
+      passwordHash: await bcrypt.hash(password, 12),
+      role: 'customer',
       whatsapp: whatsapp?.trim() || '',
       college: college?.trim() || '',
       authProvider: 'email',
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
     };
     usersStore.push(newCustomer);
     user = newCustomer;
   } else {
+    if (!user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
+      res.status(401).json({ error: 'Invalid email or password.' });
+      return;
+    }
     if (name && !user.name) user.name = name.trim();
     if (whatsapp && !user.whatsapp) user.whatsapp = whatsapp.trim();
     if (college && !user.college) user.college = college.trim();
   }
+
+  await persistState();
 
   const customerPayload: AuthUser = {
     id: user.id,
@@ -712,8 +724,8 @@ app.post('/api/auth/customer/login', (req: Request, res: Response) => {
 
   res.cookie('campora_session', token, {
     httpOnly: true,
-    secure: true,
-    sameSite: 'none',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
@@ -724,71 +736,18 @@ app.post('/api/auth/customer/login', (req: Request, res: Response) => {
   });
 });
 
-// Customer OAuth Fallback/Manual Sign-In
-app.post('/api/auth/customer/oauth', (req: Request, res: Response) => {
-  const { provider, email, name, college, whatsapp, avatar } = req.body;
-
-  if (!email || !provider) {
-    res.status(400).json({ error: 'OAuth provider and verified email are required.' });
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  let user = usersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-  if (!user) {
-    const newCustomer: StoredUser = {
-      id: `cust-${Date.now()}`,
-      name: name?.trim() || normalizedEmail.split('@')[0],
-      email: normalizedEmail,
-      avatar: avatar || undefined,
-      role: 'customer', // STRICT ENFORCEMENT: Customer role only
-      whatsapp: whatsapp?.trim() || '',
-      college: college?.trim() || '',
-      authProvider: provider === 'microsoft' ? 'microsoft' : 'google',
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    usersStore.push(newCustomer);
-    user = newCustomer;
-  } else {
-    if (avatar) user.avatar = avatar;
-    if (name) user.name = name;
-  }
-
-  const customerPayload: AuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    avatar: user.avatar,
-    role: 'customer',
-    whatsapp: user.whatsapp,
-    college: user.college,
-    authProvider: user.authProvider,
-    createdAt: user.createdAt,
-  };
-
-  const token = jwt.sign(customerPayload, JWT_SECRET, { expiresIn: '7d' });
-
-  res.cookie('campora_session', token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'none',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-
-  res.json({
-    success: true,
-    user: customerPayload,
-    token,
-  });
+// This endpoint is intentionally disabled. OAuth identities must be established only
+// by the provider callback after validating the authorization code and provider profile.
+app.post('/api/auth/customer/oauth', (_req: Request, res: Response) => {
+  res.status(410).json({ error: 'Direct OAuth sign-in is disabled. Start sign-in through the official provider authorization flow.' });
 });
 
 // Logout
 app.post('/api/auth/logout', (_req: Request, res: Response) => {
   res.clearCookie('campora_session', {
     httpOnly: true,
-    secure: true,
-    sameSite: 'none',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   });
   res.json({ success: true, message: 'Logged out successfully.' });
 });
@@ -836,7 +795,7 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
 });
 
 // Create new customer order with backend package discount enforcement
-app.post('/api/customer/orders', (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user;
   const data = req.body;
 
@@ -921,11 +880,12 @@ app.post('/api/customer/orders', (req: RequestWithUser, res: Response) => {
     });
   }
 
+  await persistState();
   res.status(201).json({ success: true, order: newOrder });
 });
 
 // Customer submits UPI payment proof (UTR and screenshot)
-app.post('/api/customer/orders/:id/payment', requireAuth, (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
   const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body;
@@ -984,6 +944,7 @@ app.post('/api/customer/orders/:id/payment', requireAuth, (req: RequestWithUser,
   };
 
   ordersStore[orderIndex] = updatedOrder;
+  await persistState();
 
   const { adminNotes, ...customerSafeOrder } = updatedOrder;
   res.json({ success: true, message: 'Payment proof submitted. Admin will verify shortly.', order: customerSafeOrder });
@@ -1083,7 +1044,7 @@ app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response)
 });
 
 // Admin Order Status Update (Approve, Reject, Cancel, In Progress, Review, Completed)
-app.patch('/api/admin/orders/:id/status', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { status, rejectionReason, cancellationReason } = req.body as {
     status: OrderStatus;
@@ -1151,11 +1112,12 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, (req: RequestWithUser, r
   };
 
   ordersStore[orderIndex] = updatedOrder;
+  await persistState();
   res.json({ success: true, order: updatedOrder });
 });
 
 // Admin Payment Verification (Confirm or Reject)
-app.patch('/api/admin/orders/:id/payment', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { action, rejectionReason } = req.body as { action: 'confirm' | 'reject'; rejectionReason?: string };
 
@@ -1204,6 +1166,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, (req: RequestWithUser, 
     };
 
     ordersStore[orderIndex] = updatedOrder;
+    await persistState();
     res.json({ success: true, message: `Payment verified for ₹${payableAmount}. Order is now in progress.`, order: updatedOrder });
     return;
   }
@@ -1235,6 +1198,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, (req: RequestWithUser, 
     };
 
     ordersStore[orderIndex] = updatedOrder;
+    await persistState();
     res.json({ success: true, message: 'Payment marked as rejected.', order: updatedOrder });
     return;
   }
@@ -1243,7 +1207,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, (req: RequestWithUser, 
 });
 
 // Admin Upload Completed Deliverable
-app.post('/api/admin/orders/:id/deliverables', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { title, fileType, fileSize, downloadUrl } = req.body;
 
@@ -1289,11 +1253,12 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, (req: RequestWithUs
   };
 
   ordersStore[orderIndex] = updatedOrder;
+  await persistState();
   res.json({ success: true, message: 'Completed deliverable uploaded successfully.', order: updatedOrder });
 });
 
 // Admin Private Notes
-app.patch('/api/admin/orders/:id/notes', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { adminNotes } = req.body;
 
@@ -1304,7 +1269,8 @@ app.patch('/api/admin/orders/:id/notes', requireAdmin, (req: RequestWithUser, re
   }
 
   ordersStore[orderIndex].adminNotes = adminNotes || '';
-  ordersStore[orderIndex].updatedAt = 'Just now';
+  ordersStore[orderIndex].updatedAt = new Date().toISOString();
+  await persistState();
 
   res.json({ success: true, order: ordersStore[orderIndex] });
 });
@@ -1417,6 +1383,7 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
 // VITE MIDDLEWARE & STATIC SERVING
 // ==========================================
 async function startServer() {
+  await loadPersistentState();
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

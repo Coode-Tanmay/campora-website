@@ -74,9 +74,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const setUserDirectly = (authUser: AuthUser, token?: string) => {
-    if (token) {
-      localStorage.setItem('campora_token', token);
-    }
+    // The server sets the HttpOnly session cookie; never persist session tokens in localStorage.
     setUser(authUser);
   };
 

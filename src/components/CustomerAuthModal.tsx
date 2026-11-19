@@ -18,7 +18,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   onNavigateToAdmin,
   defaultMode = 'login',
 }) => {
-  const { loginCustomer, setUserDirectly } = useAuth();
+  const { loginCustomer, setUserDirectly, refreshSession } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>(defaultMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,13 +42,13 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   // Listen for OAuth popup completion postMessage
   useEffect(() => {
     const handleOAuthMessage = (event: MessageEvent) => {
-      // Validate origin if possible or match structure
-      if (event.data && typeof event.data === 'object') {
+      // Only accept messages from this exact site origin. The session itself is an HttpOnly cookie.
+      if (event.origin === window.location.origin && event.data && typeof event.data === 'object') {
         if (event.data.type === 'OAUTH_AUTH_SUCCESS') {
-          const { user, token } = event.data;
+          const { user } = event.data;
           setOauthLoading(null);
           if (user) {
-            setUserDirectly(user, token);
+            void refreshSession();
             if (onSuccess) onSuccess();
             onClose();
           }
