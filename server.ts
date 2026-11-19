@@ -31,6 +31,66 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
+const PRIVATE_STORAGE_BUCKET = 'campora-private';
+const ALLOWED_UPLOAD_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'image/jpeg',
+  'image/png',
+]);
+
+function parseUploadDataUrl(dataUrl: unknown, maxBytes = 5 * 1024 * 1024): { buffer: Buffer; contentType: string } {
+  if (typeof dataUrl !== 'string') throw new Error('A file is required.');
+  const match = dataUrl.match(/^data:([a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!match) throw new Error('The uploaded file format is invalid.');
+  const contentType = match[1].toLowerCase();
+  if (!ALLOWED_UPLOAD_TYPES.has(contentType)) throw new Error('This file type is not supported.');
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > maxBytes) throw new Error('The file exceeds the allowed upload size.');
+  return { buffer, contentType };
+}
+
+async function uploadPrivateDataUrl(folder: string, fileName: string, dataUrl: unknown, maxBytes = 5 * 1024 * 1024): Promise<{ storagePath: string; contentType: string; size: number }> {
+  const parsed = parseUploadDataUrl(dataUrl, maxBytes);
+  const safeName = path.basename(String(fileName || 'upload')).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100) || 'upload';
+  const storagePath = folder + '/' + randomBytes(12).toString('hex') + '-' + safeName;
+  const { error } = await supabase.storage.from(PRIVATE_STORAGE_BUCKET).upload(storagePath, parsed.buffer, {
+    contentType: parsed.contentType,
+    upsert: false,
+  });
+  if (error) throw new Error('Unable to store uploaded file securely: ' + error.message);
+  return { storagePath, contentType: parsed.contentType, size: parsed.buffer.length };
+}
+
+async function createPrivateSignedUrl(storagePath?: string): Promise<string | undefined> {
+  if (!storagePath) return undefined;
+  const { data, error } = await supabase.storage.from(PRIVATE_STORAGE_BUCKET).createSignedUrl(storagePath, 300);
+  if (error || !data?.signedUrl) throw new Error('Unable to create a secure file link.');
+  return data.signedUrl;
+}
+
+async function withSignedFileLinks(order: CamporaOrder): Promise<CamporaOrder> {
+  const safeOrder = JSON.parse(JSON.stringify(order)) as CamporaOrder;
+  if (safeOrder.collegeTemplateFile?.storagePath) {
+    safeOrder.collegeTemplateFile.downloadUrl = await createPrivateSignedUrl(safeOrder.collegeTemplateFile.storagePath);
+  }
+  for (const file of safeOrder.referenceFiles || []) {
+    if (file.storagePath) file.downloadUrl = await createPrivateSignedUrl(file.storagePath);
+  }
+  for (const file of safeOrder.deliverables || []) {
+    if (file.storagePath) file.downloadUrl = await createPrivateSignedUrl(file.storagePath);
+  }
+  if (safeOrder.paymentDetails?.screenshotStoragePath) {
+    safeOrder.paymentDetails.screenshotUrl = await createPrivateSignedUrl(safeOrder.paymentDetails.screenshotStoragePath);
+  }
+  return safeOrder;
+}
+
 // Fail closed: never run with default or hard-coded production credentials.
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
   throw new Error('Missing or weak JWT_SECRET. Set a random secret of at least 32 characters in your local environment.');
@@ -51,7 +111,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   next();
 });
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 
