@@ -52,7 +52,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ onStartOrder }) => {
             How It Works.
           </h2>
           <p className="text-[#B8B8B8] text-sm sm:text-base mt-3">
-            From brief to submission-ready in four effortless steps.
+            From your brief to final delivery in four clear steps.
           </p>
         </div>
 
