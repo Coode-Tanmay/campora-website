@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { INITIAL_ORDERS } from './src/data/mockData';
+import { INITIAL_ORDERS, SERVICES_DATA } from './src/data/mockData';
 import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from './src/types';
 
 dotenv.config();
@@ -808,92 +808,107 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
   res.json({ order: user.role === 'admin' ? order : customerSafeOrder });
 });
 
-// Create new customer order with backend package discount enforcement
+// Create customer order. Price, discount and eligibility are always calculated server-side.
 app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
-  const user = req.user;
-  const data = req.body;
-
-  if (!data.customerName || !data.whatsappNumber || !data.topic || !data.serviceId) {
-    res.status(400).json({ error: 'Missing required order fields.' });
+  const user = req.user!;
+  if (user.role !== 'customer') {
+    res.status(403).json({ error: 'Only customer accounts can place orders.' });
     return;
   }
 
-  const isPackage = Boolean(data.isPackage || data.serviceId === 'internship-package');
-  let subtotal = Number(data.subtotal) || (isPackage ? 499 : 250);
-  let discount = Number(data.discount) || 0;
-  let couponCode = data.couponCode;
+  const data = req.body || {};
+  if (!data.customerName?.trim() || !data.whatsappNumber?.trim() || !data.topic?.trim() || !data.serviceId) {
+    res.status(400).json({ error: 'Please complete your name, WhatsApp number, service and topic.' });
+    return;
+  }
 
-  // STRICT PACKAGE DISCOUNT RULE ENFORCEMENT ON BACKEND:
-  // Complete Internship Package (₹499) is NOT eligible for discount codes.
-  if (isPackage) {
+  const service = SERVICES_DATA.find((item) => item.id === data.serviceId);
+  if (!service) {
+    res.status(400).json({ error: 'Please select a valid CAMPORA service.' });
+    return;
+  }
+
+  const pagesOrSlides = Number(data.pagesOrSlides);
+  if (!Number.isInteger(pagesOrSlides) || pagesOrSlides < 1 || pagesOrSlides > 200) {
+    res.status(400).json({ error: 'Please provide a valid page or slide count.' });
+    return;
+  }
+
+  const isPackage = service.id === 'internship-package';
+  const requiresReview = service.pricingType === 'variable'
+    || Boolean(service.maxIncludedPages && pagesOrSlides > service.maxIncludedPages)
+    || Boolean(data.hasCollegeTemplate);
+
+  const subtotal = Number(service.price) || 0;
+  const requestedCode = typeof data.couponCode === 'string' ? data.couponCode.trim().toUpperCase() : '';
+  let discount = 0;
+  let couponCode: string | undefined;
+
+  if (!isPackage && subtotal >= 250) {
+    if (requestedCode === 'CAMPORA100' || requestedCode === 'CAMPORA123') {
+      discount = 100;
+      couponCode = requestedCode;
+    } else if (requestedCode === 'ALEX20CMP') {
+      discount = Math.round(subtotal * 0.2);
+      couponCode = requestedCode;
+    }
+  }
+
+  // Variable-price services and oversized work are quoted by the admin.
+  if (requiresReview || isPackage) {
     discount = 0;
     couponCode = undefined;
-    subtotal = 499;
   }
 
   const total = Math.max(0, subtotal - discount);
-
-  const orderId = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
-  const nowStr = 'Just now';
+  const now = new Date().toISOString();
+  const orderId = `CMP-${Date.now().toString().slice(-8)}`;
 
   const newOrder: CamporaOrder = {
     id: orderId,
-    customerId: user?.id || `guest-${Date.now()}`,
+    customerId: user.id,
     customerName: data.customerName.trim(),
-    customerEmail: data.customerEmail?.trim() || user?.email || `${data.customerName.toLowerCase().replace(/\s+/g, '')}@student.edu`,
+    customerEmail: user.email,
     whatsappNumber: data.whatsappNumber.trim(),
-    college: data.college?.trim() || 'University Student',
-    serviceId: data.serviceId,
-    serviceName: data.serviceName || 'Academic Service',
+    college: data.college?.trim() || user.college || 'Not provided',
+    serviceId: service.id,
+    serviceName: service.title,
     isPackage,
-    pricingType: data.pricingType || (data.serviceId === 'urgent-ppt' ? 'variable' : 'fixed'),
+    pricingType: service.pricingType,
     topic: data.topic.trim(),
-    pagesOrSlides: Number(data.pagesOrSlides) || 15,
-    deadline: data.deadline || 'Standard (24-48 hrs)',
-    instructions: data.instructions || '',
+    pagesOrSlides,
+    deadline: typeof data.deadline === 'string' ? data.deadline : 'Standard (24-48 hrs)',
+    instructions: typeof data.instructions === 'string' ? data.instructions.slice(0, 10000) : '',
     hasCollegeTemplate: Boolean(data.hasCollegeTemplate),
     collegeTemplateFile: data.collegeTemplateFile,
-    templateInstructions: data.templateInstructions,
-    referenceFiles: data.referenceFiles || [],
+    templateInstructions: typeof data.templateInstructions === 'string' ? data.templateInstructions.slice(0, 5000) : undefined,
+    referenceFiles: Array.isArray(data.referenceFiles) ? data.referenceFiles.slice(0, 10) : [],
     subtotal,
-    finalPrice: subtotal,
+    finalPrice: total,
     discount,
-    discountEligible: !isPackage,
+    discountEligible: !isPackage && !requiresReview,
     couponCode,
     total,
-    quoteStatus: data.pricingType === 'variable' ? 'pending' : 'not_required',
-    paymentStatus: 'pending',
+    quoteStatus: requiresReview ? 'pending' : 'not_required',
+    paymentStatus: requiresReview ? 'awaiting_quote' : 'pending',
     status: 'new_order',
-    requiresReview: data.pricingType === 'variable' || isPackage || Boolean(data.hasCollegeTemplate),
-    reviewReason: data.pricingType === 'variable' ? 'Urgent / Variable scope review required.' : 'New order awaiting admin review.',
+    requiresReview,
+    reviewReason: requiresReview ? 'Order requires review before payment.' : undefined,
     progressPercent: 10,
-    createdAt: nowStr,
-    updatedAt: nowStr,
-    estimatedDelivery: data.deadline?.includes('1-3') ? 'In 3 Hours' : 'In 24-48 Hours',
+    createdAt: now,
+    updatedAt: now,
+    estimatedDelivery: 'To be confirmed',
     timeline: [
-      { id: 't1', title: 'Order Submitted', description: 'Brief and files received by CAMPORA desk', timestamp: nowStr, status: 'completed' },
-      { id: 't2', title: 'Admin Review & Approval', description: 'Lead editor is reviewing academic guidelines', status: 'current' },
-      { id: 't3', title: 'Payment Verification', description: 'UPI payment confirmation', status: 'pending' },
-      { id: 't4', title: 'Work In Progress', description: 'Designer drafting initial deliverables', status: 'pending' },
-      { id: 't5', title: 'Quality Assurance & Delivery', description: 'Final plagiarism check and downloadable delivery', status: 'pending' },
+      { id: 't1', title: 'Order Submitted', description: 'Your order has been received by CAMPORA', timestamp: now, status: 'completed' },
+      { id: 't2', title: 'Requirements Review', description: 'CAMPORA is reviewing your order details', timestamp: now, status: 'current' },
+      { id: 't3', title: 'Payment', description: requiresReview ? 'Payment details will be available after review' : 'Awaiting payment', status: 'pending' },
+      { id: 't4', title: 'Work In Progress', description: 'Work begins after payment verification', status: 'pending' },
+      { id: 't5', title: 'Quality Review & Delivery', description: 'Your completed files will appear here', status: 'pending' },
     ],
     deliverables: [],
   };
 
   ordersStore.unshift(newOrder);
-
-  // If customer is authenticated, also sync to their user profile
-  if (user && !usersStore.find((u) => u.id === user.id)) {
-    usersStore.push({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: 'customer',
-      whatsapp: user.whatsapp,
-      college: user.college,
-    });
-  }
-
   await persistState();
   res.status(201).json({ success: true, order: newOrder });
 });
