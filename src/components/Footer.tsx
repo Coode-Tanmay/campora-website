@@ -91,7 +91,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal })
               </li>
               <li>
                 <button onClick={() => onSelectTab('services')} className="hover:text-[#D4A72C]">
-                  Urgent 3-Hour PPT Delivery
+                  Urgent PPT (quote first)
                 </button>
               </li>
             </ul>
