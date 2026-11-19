@@ -67,6 +67,21 @@ async function uploadPrivateDataUrl(folder: string, fileName: string, dataUrl: u
   return { storagePath, contentType: parsed.contentType, size: parsed.buffer.length };
 }
 
+async function persistIncomingAttachment(file: any, folder: string): Promise<any> {
+  if (!file || typeof file !== 'object' || typeof file.dataUrl !== 'string') {
+    throw new Error('One of the selected files is missing its upload data. Please select it again.');
+  }
+  const stored = await uploadPrivateDataUrl(folder, file.name, file.dataUrl);
+  return {
+    id: typeof file.id === 'string' ? file.id.slice(0, 100) : randomBytes(8).toString('hex'),
+    name: path.basename(String(file.name || 'Attachment')).slice(0, 150),
+    size: (stored.size / (1024 * 1024)).toFixed(2) + ' MB',
+    type: stored.contentType,
+    uploadedAt: new Date().toISOString(),
+    storagePath: stored.storagePath,
+  };
+}
+
 async function createPrivateSignedUrl(storagePath?: string): Promise<string | undefined> {
   if (!storagePath) return undefined;
   const { data, error } = await supabase.storage.from(PRIVATE_STORAGE_BUCKET).createSignedUrl(storagePath, 300);
@@ -991,6 +1006,22 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
   const now = new Date().toISOString();
   const orderId = `CMP-${Date.now().toString().slice(-8)}`;
 
+  let savedTemplateFile: any = undefined;
+  let savedReferenceFiles: any[] = [];
+  try {
+    if (data.hasCollegeTemplate) {
+      savedTemplateFile = await persistIncomingAttachment(data.collegeTemplateFile, 'orders/' + orderId + '/customer');
+    }
+    const incomingReferences = Array.isArray(data.referenceFiles) ? data.referenceFiles : [];
+    if (incomingReferences.length > 10) throw new Error('You can attach a maximum of 10 reference files.');
+    savedReferenceFiles = await Promise.all(incomingReferences.map((file: any) =>
+      persistIncomingAttachment(file, 'orders/' + orderId + '/customer')
+    ));
+  } catch (uploadError: any) {
+    res.status(400).json({ error: uploadError.message || 'Unable to upload order attachments.' });
+    return;
+  }
+
   const newOrder: CamporaOrder = {
     id: orderId,
     customerId: user.id,
@@ -1007,9 +1038,9 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
     deadline: typeof data.deadline === 'string' ? data.deadline : 'Standard (24-48 hrs)',
     instructions: typeof data.instructions === 'string' ? data.instructions.slice(0, 10000) : '',
     hasCollegeTemplate: Boolean(data.hasCollegeTemplate),
-    collegeTemplateFile: data.collegeTemplateFile,
+    collegeTemplateFile: savedTemplateFile,
     templateInstructions: typeof data.templateInstructions === 'string' ? data.templateInstructions.slice(0, 5000) : undefined,
-    referenceFiles: Array.isArray(data.referenceFiles) ? data.referenceFiles.slice(0, 10) : [],
+    referenceFiles: savedReferenceFiles,
     subtotal,
     finalPrice: total,
     discount,
