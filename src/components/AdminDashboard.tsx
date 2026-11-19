@@ -894,7 +894,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         {ord.paymentStatus === 'pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Pending Scan</span>}
                       </td>
                       <td className="py-3.5 text-right space-x-2">
-                        {ord.paymentStatus !== 'paid' && (
+                        {ord.paymentStatus === 'verification_pending' && (
                           <button
                             onClick={() => handleConfirmPayment(ord.id)}
                             className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-colors"
