@@ -34,8 +34,6 @@ export const SERVICES_DATA: ServiceItem[] = [
     pricingType: 'fixed',
     maxIncludedPages: 20,
     supportsTemplate: true,
-    popular: true,
-    tag: 'MOST POPULAR',
     description: 'Custom corporate graphics, infographic visualizations, animations, and topic research.',
     features: [
       'Up to 20 Custom Slides Included',
@@ -64,7 +62,7 @@ export const SERVICES_DATA: ServiceItem[] = [
       'Delivered in 1–3 Hours',
       'Starting from ₹400 (Quote Review)',
       'Dedicated Lead Designer',
-      'Instant WhatsApp Updates',
+      'WhatsApp updates during support hours',
       'Timeline confirmed during quote review',
       'Editable .PPTX + PDF export'
     ],
@@ -122,8 +120,6 @@ export const SERVICES_DATA: ServiceItem[] = [
     pricingType: 'fixed',
     maxIncludedPages: 20,
     supportsTemplate: true,
-    popular: true,
-    tag: 'RECOMMENDED',
     description: 'Structured internship report based on your genuine internship details, project work and supporting documents.',
     features: [
       'Up to 20 Formatted Pages Included',
@@ -202,8 +198,6 @@ export const SERVICES_DATA: ServiceItem[] = [
     pricingType: 'fixed',
     maxIncludedPages: 40,
     supportsTemplate: true,
-    popular: true,
-    tag: 'MOST POPULAR',
     description: 'Internship documentation support based on your genuine internship or project details, including report formatting, certificate layout design and viva preparation.',
     features: [
       'Comprehensive Formatted Project Report',
