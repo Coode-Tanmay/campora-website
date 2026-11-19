@@ -1061,11 +1061,11 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                           <span className="font-bold text-white">{currentService.title}</span>
                         </div>
                         <div className="flex justify-between text-[#B8B8B8]">
-                          <span>Direct WhatsApp Delivery:</span>
+                          <span>WhatsApp Support:</span>
                           <span className="text-[#35C759] font-mono">{whatsappNumber}</span>
                         </div>
                         <div className="flex justify-between text-[#B8B8B8] pt-2 border-t border-[#2A2A2A] font-bold">
-                          <span>Amount Due Now:</span>
+                          <span>Order Total:</span>
                           <span className="text-base text-[#D4A72C]">₹{finalTotal}</span>
                         </div>
                       </div>
