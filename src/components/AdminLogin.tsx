@@ -24,7 +24,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToHome 
         throw new Error('Please enter both Admin username and password.');
       }
 
-      await loginAdmin(username.trim(), password.trim());
+      await loginAdmin(username.trim(), password);
       onSuccess();
     } catch (err: any) {
       setError(err.message || 'Invalid administrator credentials. Authentication failed.');
