@@ -7,25 +7,14 @@ interface CustomerAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  onNavigateToAdmin?: () => void;
-  defaultMode?: 'login' | 'register';
 }
 
 export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  onNavigateToAdmin,
-  defaultMode = 'login',
 }) => {
-  const { loginCustomer, setUserDirectly, refreshSession } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>(defaultMode);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [college, setCollege] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const { refreshSession } = useAuth();
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedUri, setCopiedUri] = useState(false);
@@ -63,36 +52,9 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
     return () => {
       window.removeEventListener('message', handleOAuthMessage);
     };
-  }, [onSuccess, onClose, setUserDirectly]);
+  }, [onSuccess, onClose, refreshSession]);
 
   if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      if (!email || !email.includes('@')) {
-        throw new Error('Please enter a valid email address.');
-      }
-
-      await loginCustomer({
-        email,
-        password,
-        name: name || undefined,
-        whatsapp: whatsapp || undefined,
-        college: college || undefined,
-      });
-
-      if (onSuccess) onSuccess();
-      onClose();
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleOfficialOAuth = async (provider: 'google' | 'microsoft') => {
     setError(null);
@@ -189,7 +151,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
               <Sparkles className="w-3.5 h-3.5" /> CAMPORA
             </div>
             <h2 className="text-2xl font-black text-white tracking-tight">
-              {mode === 'login' ? 'Welcome to CAMPORA' : 'Create Student Account'}
+              Welcome to CAMPORA
             </h2>
             <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
               Sign in to manage your orders, payments and completed work.
@@ -209,7 +171,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
             <button
               id="btn-oauth-google"
               type="button"
-              disabled={isLoading || oauthLoading !== null}
+              disabled={oauthLoading !== null}
               onClick={() => handleOfficialOAuth('google')}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl bg-[#1A1A1D] hover:bg-[#242429] border border-zinc-700/70 hover:border-[#D4A72C]/60 text-zinc-100 font-medium text-xs sm:text-sm transition-all shadow-md group disabled:opacity-50"
             >
@@ -229,7 +191,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
             <button
               id="btn-oauth-microsoft"
               type="button"
-              disabled={isLoading || oauthLoading !== null}
+              disabled={oauthLoading !== null}
               onClick={() => handleOfficialOAuth('microsoft')}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl bg-[#1A1A1D] hover:bg-[#242429] border border-zinc-700/70 hover:border-zinc-500 text-zinc-100 font-medium text-xs sm:text-sm transition-all shadow-md group disabled:opacity-50"
             >
@@ -247,156 +209,10 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
             </button>
           </div>
 
-          {/* Divider */}
-          <div className="relative flex items-center justify-center mb-5">
-            <div className="border-t border-zinc-800 w-full" />
-            <span className="bg-[#121214] px-3 text-xs text-zinc-500 uppercase tracking-wider font-semibold">
-              OR
-            </span>
-            <div className="border-t border-zinc-800 w-full" />
+          <div className="mt-5 rounded-xl border border-zinc-800 bg-[#1A1A1D] p-3.5 text-xs text-zinc-400 leading-relaxed">
+            Sign in with your Google or Microsoft account. CAMPORA uses the email returned by the identity provider to create your customer account. Email/password registration is not enabled until email verification and account recovery are configured.
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            {mode === 'register' && (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-300 mb-1">Full Name</label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="input-customer-name"
-                      type="text"
-                      required
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Aryan Verma"
-                      className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">WhatsApp No.</label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        id="input-customer-whatsapp"
-                        type="tel"
-                        value={whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
-                        placeholder="+91 98765..."
-                        className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-300 mb-1">College / Univ</label>
-                    <div className="relative">
-                      <School className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        id="input-customer-college"
-                        type="text"
-                        value={college}
-                        onChange={(e) => setCollege(e.target.value)}
-                        placeholder="e.g. VIT / SRM / BITS"
-                        className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1">Email</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  id="input-customer-email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="student@university.edu.in"
-                  className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-zinc-300 mb-1">Password</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  id="input-customer-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <button
-              id="btn-customer-submit"
-              type="submit"
-              disabled={isLoading}
-              className="w-full mt-2 bg-gradient-to-r from-[#D4A72C] to-[#F3CE5E] hover:from-[#E5B93F] hover:to-[#F5D574] text-black font-bold py-2.5 px-4 rounded-xl text-sm transition-all shadow-lg shadow-[#D4A72C]/20 flex items-center justify-center gap-2"
-            >
-              {isLoading ? 'Processing...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-
-          {/* Toggle Login/Register */}
-          <div className="mt-4 text-center text-xs text-zinc-400">
-            {mode === 'login' ? (
-              <p>
-                Don't have an account?{' '}
-                <button
-                  id="btn-switch-to-register"
-                  type="button"
-                  onClick={() => setMode('register')}
-                  className="text-[#D4A72C] hover:underline font-semibold"
-                >
-                  Create Account
-                </button>
-              </p>
-            ) : (
-              <p>
-                Already have an account?{' '}
-                <button
-                  id="btn-switch-to-login"
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="text-[#D4A72C] hover:underline font-semibold"
-                >
-                  Sign In
-                </button>
-              </p>
-            )}
-          </div>
-
-          {/* Admin Navigation Section */}
-          <div className="mt-6 pt-4 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-500">
-            <span>Admin?</span>
-            <button
-              id="btn-go-to-admin-login"
-              type="button"
-              onClick={() => {
-                if (onNavigateToAdmin) {
-                  onNavigateToAdmin();
-                }
-                onClose();
-              }}
-              className="text-zinc-300 hover:text-[#D4A72C] font-semibold px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-[#D4A72C]/40 transition-colors"
-            >
-              Admin Login &rarr;
-            </button>
-          </div>
         </div>
       </div>
 

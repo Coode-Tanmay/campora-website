@@ -27,7 +27,7 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOrderSimil
             <span>SAMPLE WORK</span>
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-['Outfit',sans-serif]">
-            Proven Academic Excellence.
+            Sample Work & Design Directions.
           </h2>
           <p className="text-[#B8B8B8] text-sm sm:text-base mt-3">
             Browse illustrative examples of the formats and design styles CAMPORA can create. These are sample concepts, not customer submissions.

@@ -160,6 +160,13 @@ export const api = {
     });
   },
 
+  async sendQuote(orderId: string, finalPrice: number, message?: string): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
+    return fetchJson<{ success: boolean; order: CamporaOrder; message: string }>(`${API_BASE}/admin/orders/${orderId}/quote`, {
+      method: 'PATCH',
+      body: JSON.stringify({ finalPrice, message }),
+    });
+  },
+
   async verifyPayment(orderId: string, action: 'confirm' | 'reject', rejectionReason?: string): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
     return fetchJson<{ success: boolean; order: CamporaOrder; message: string }>(`${API_BASE}/admin/orders/${orderId}/payment`, {
       method: 'PATCH',
@@ -167,7 +174,7 @@ export const api = {
     });
   },
 
-  async uploadDeliverable(orderId: string, deliverable: { title: string; fileType: string; fileSize: string; downloadUrl?: string }): Promise<{ success: boolean; order: CamporaOrder }> {
+  async uploadDeliverable(orderId: string, deliverable: { title: string; fileType: string; fileName: string; fileData: string }): Promise<{ success: boolean; order: CamporaOrder }> {
     return fetchJson<{ success: boolean; order: CamporaOrder }>(`${API_BASE}/admin/orders/${orderId}/deliverables`, {
       method: 'POST',
       body: JSON.stringify(deliverable),

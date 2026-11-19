@@ -18,7 +18,7 @@ export const WhyUs: React.FC = () => {
             The Premium Standard.
           </h2>
           <p className="text-[#B8B8B8] text-sm sm:text-base mt-3">
-            Engineered specifically for university standards. We combine speed, meticulous academic formatting, and ironclad confidentiality.
+            Practical support for student projects and documentation, with clear service scopes, defined turnaround options and private handling of order files.
           </p>
         </div>
 
@@ -38,7 +38,7 @@ export const WhyUs: React.FC = () => {
                 ⚡ Fast Delivery
               </h3>
               <p className="text-[#B8B8B8] text-xs sm:text-sm mt-2 leading-relaxed">
-                Same-day and next-day delivery available. Need it in 1–3 hours? Our urgent team delivers without cutting corners.
+                Standard and urgent turnaround options are available. Urgent requests are reviewed first, and the final timeline is confirmed with the quote.
               </p>
             </div>
             <div className="mt-4 pt-3 border-t border-[#2A2A2A] flex items-center gap-2 text-xs font-semibold text-[#D4A72C]">
@@ -63,12 +63,12 @@ export const WhyUs: React.FC = () => {
                 🕐 Extended Support
               </h3>
               <p className="text-[#B8B8B8] text-xs sm:text-sm mt-2 leading-relaxed">
-                Support available from 6 AM – 12 AM across WhatsApp. Quick replies, instant revisions, and direct human updates.
+                WhatsApp support is available from 6 AM – 12 AM for order questions and updates. Response times can vary with demand.
               </p>
             </div>
             <div className="mt-4 pt-3 border-t border-[#2A2A2A] flex items-center gap-2 text-xs font-semibold text-[#35C759]">
-              <span className="w-2 h-2 rounded-full bg-[#35C759] animate-pulse" />
-              <span>6 AM – 12 AM Active</span>
+              <Clock className="w-3.5 h-3.5" />
+              <span>Support hours: 6 AM – 12 AM</span>
             </div>
           </div>
 
@@ -85,7 +85,7 @@ export const WhyUs: React.FC = () => {
                 🎯 Student Focused
               </h3>
               <p className="text-[#B8B8B8] text-xs sm:text-sm mt-2 leading-relaxed">
-                Services designed specifically for college students. Budget-friendly pricing starting from ₹150 with zero hidden charges.
+                Services are designed around common college requirements. Pricing starts at ₹150; custom and urgent work is quoted before payment.
               </p>
             </div>
             <div className="mt-4 pt-3 border-t border-[#2A2A2A] text-xs font-semibold text-[#858585]">
@@ -127,11 +127,11 @@ export const WhyUs: React.FC = () => {
                 🔒 Confidential
               </h3>
               <p className="text-[#B8B8B8] text-xs sm:text-sm mt-2 leading-relaxed">
-                Student files and information are handled privately. Your college details, topics, and personal data are never disclosed.
+                Order files are stored privately. Access is limited to the customer account and authorized CAMPORA administrators for order handling.
               </p>
             </div>
             <div className="mt-4 pt-3 border-t border-[#2A2A2A] text-xs font-semibold text-[#858585]">
-              100% Private & Protected
+              Private storage and signed file access
             </div>
           </div>
 
@@ -148,13 +148,13 @@ export const WhyUs: React.FC = () => {
                 ✨ Quality Work
               </h3>
               <p className="text-[#B8B8B8] font-normal text-xs sm:text-sm mt-2 leading-relaxed">
-                Clean, professional and submission-ready work. Crafted by experienced academic specialists with free revisions included.
+                Work is prepared to the agreed brief and selected service. Any included revision and its scope are confirmed with the order.
               </p>
             </div>
             <div className="mt-4 pt-3 border-t border-[#2A2A2A] flex items-center justify-between font-bold text-xs">
-              <span className="text-[#B8B8B8]">Free revisions included</span>
-              <span className="px-2.5 py-0.5 rounded-full bg-[#D4A72C] text-[#0B0B0B] text-[11px] font-bold">
-                Guaranteed
+              <span className="text-[#B8B8B8]">Service-specific revisions</span>
+              <span className="px-2.5 py-0.5 rounded-full bg-[#1D1D1D] text-[#D4A72C] text-[11px] font-semibold border border-[#2A2A2A]">
+                Clear process
               </span>
             </div>
           </div>

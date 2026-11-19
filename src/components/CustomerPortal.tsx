@@ -115,7 +115,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{user?.name || 'Student'}</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  Verified Student
+                  Student Account
                 </span>
               </div>
               <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-2">

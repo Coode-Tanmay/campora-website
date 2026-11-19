@@ -7,12 +7,14 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { INITIAL_ORDERS, SERVICES_DATA } from './src/data/mockData';
+import { SERVICES_DATA } from './src/data/mockData';
 import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from './src/types';
 
 dotenv.config();
 
 const app = express();
+// Render sits behind a trusted reverse proxy; use the forwarded client address for throttling.
+app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 3000;
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -28,6 +30,82 @@ if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+const PRIVATE_STORAGE_BUCKET = 'campora-private';
+const ALLOWED_UPLOAD_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'application/x-zip-compressed',
+  'image/jpeg',
+  'image/png',
+]);
+
+function parseUploadDataUrl(dataUrl: unknown, maxBytes = 5 * 1024 * 1024): { buffer: Buffer; contentType: string } {
+  if (typeof dataUrl !== 'string') throw new Error('A file is required.');
+  const match = dataUrl.match(/^data:([a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/);
+  if (!match) throw new Error('The uploaded file format is invalid.');
+  const contentType = match[1].toLowerCase();
+  if (!ALLOWED_UPLOAD_TYPES.has(contentType)) throw new Error('This file type is not supported.');
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > maxBytes) throw new Error('The file exceeds the allowed upload size.');
+  return { buffer, contentType };
+}
+
+async function uploadPrivateDataUrl(folder: string, fileName: string, dataUrl: unknown, maxBytes = 5 * 1024 * 1024): Promise<{ storagePath: string; contentType: string; size: number }> {
+  const parsed = parseUploadDataUrl(dataUrl, maxBytes);
+  const safeName = path.basename(String(fileName || 'upload')).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100) || 'upload';
+  const storagePath = folder + '/' + randomBytes(12).toString('hex') + '-' + safeName;
+  const { error } = await supabase.storage.from(PRIVATE_STORAGE_BUCKET).upload(storagePath, parsed.buffer, {
+    contentType: parsed.contentType,
+    upsert: false,
+  });
+  if (error) throw new Error('Unable to store uploaded file securely: ' + error.message);
+  return { storagePath, contentType: parsed.contentType, size: parsed.buffer.length };
+}
+
+async function persistIncomingAttachment(file: any, folder: string): Promise<any> {
+  if (!file || typeof file !== 'object' || typeof file.dataUrl !== 'string') {
+    throw new Error('One of the selected files is missing its upload data. Please select it again.');
+  }
+  const stored = await uploadPrivateDataUrl(folder, file.name, file.dataUrl);
+  return {
+    id: typeof file.id === 'string' ? file.id.slice(0, 100) : randomBytes(8).toString('hex'),
+    name: path.basename(String(file.name || 'Attachment')).slice(0, 150),
+    size: (stored.size / (1024 * 1024)).toFixed(2) + ' MB',
+    type: stored.contentType,
+    uploadedAt: new Date().toISOString(),
+    storagePath: stored.storagePath,
+  };
+}
+
+async function createPrivateSignedUrl(storagePath?: string): Promise<string | undefined> {
+  if (!storagePath) return undefined;
+  const { data, error } = await supabase.storage.from(PRIVATE_STORAGE_BUCKET).createSignedUrl(storagePath, 300);
+  if (error || !data?.signedUrl) throw new Error('Unable to create a secure file link.');
+  return data.signedUrl;
+}
+
+async function withSignedFileLinks(order: CamporaOrder): Promise<CamporaOrder> {
+  const safeOrder = JSON.parse(JSON.stringify(order)) as CamporaOrder;
+  if (safeOrder.collegeTemplateFile?.storagePath) {
+    safeOrder.collegeTemplateFile.downloadUrl = await createPrivateSignedUrl(safeOrder.collegeTemplateFile.storagePath);
+  }
+  for (const file of safeOrder.referenceFiles || []) {
+    if (file.storagePath) file.downloadUrl = await createPrivateSignedUrl(file.storagePath);
+  }
+  for (const file of safeOrder.deliverables || []) {
+    if (file.storagePath) file.downloadUrl = await createPrivateSignedUrl(file.storagePath);
+  }
+  if (safeOrder.paymentDetails?.screenshotStoragePath) {
+    safeOrder.paymentDetails.screenshotUrl = await createPrivateSignedUrl(safeOrder.paymentDetails.screenshotStoragePath);
+  }
+  return safeOrder;
+}
 
 // Fail closed: never run with default or hard-coded production credentials.
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
@@ -49,9 +127,42 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   next();
 });
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
+
+// Lightweight per-process throttling for sensitive endpoints. The API is currently a
+// single Render service; move this store to Redis/Postgres before adding multiple instances.
+type RateLimitEntry = { count: number; resetAt: number };
+const rateLimitEntries = new Map<string, RateLimitEntry>();
+const rateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitEntries) {
+    if (entry.resetAt <= now) rateLimitEntries.delete(key);
+  }
+}, 60_000);
+rateLimitCleanup.unref();
+
+function rateLimit(scope: string, maxRequests: number, windowMs: number) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const key = scope + ':' + clientIp;
+    const now = Date.now();
+    const current = rateLimitEntries.get(key);
+    if (!current || current.resetAt <= now) {
+      rateLimitEntries.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    current.count += 1;
+    if (current.count > maxRequests) {
+      res.setHeader('Retry-After', String(Math.ceil((current.resetAt - now) / 1000)));
+      res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
+      return;
+    }
+    next();
+  };
+}
 
 // Reject cross-origin browser mutations. The frontend and API share the canonical APP_URL
 // through the Vercel rewrite, so state-changing requests must originate from that origin.
@@ -83,34 +194,80 @@ let usersStore: StoredUser[] = [];
 let stateWriteQueue: Promise<unknown> = Promise.resolve();
 
 async function loadPersistentState(): Promise<void> {
+  const [ordersResult, customersResult] = await Promise.all([
+    supabase.from('campora_orders').select('payload').order('created_at', { ascending: false }),
+    supabase.from('campora_customers').select('payload').order('created_at', { ascending: true }),
+  ]);
+  if (ordersResult.error) throw new Error(`Unable to load CAMPORA orders: ${ordersResult.error.message}`);
+  if (customersResult.error) throw new Error(`Unable to load CAMPORA customers: ${customersResult.error.message}`);
+
+  if ((ordersResult.data?.length || 0) > 0 || (customersResult.data?.length || 0) > 0) {
+    ordersStore = (ordersResult.data || []).map((row: any) => row.payload as CamporaOrder);
+    usersStore = (customersResult.data || []).map((row: any) => row.payload as StoredUser);
+    return;
+  }
+
+  // One-time compatibility fallback: migrate any existing JSONB state into the
+  // indexed tables before serving requests. Keep the old row as a rollback mirror.
   const { data, error } = await supabase
     .from('campora_app_state')
     .select('orders, users')
     .eq('id', 'primary')
     .maybeSingle();
-  if (error) throw new Error(`Unable to load CAMPORA data from Supabase: ${error.message}`);
+  if (error) throw new Error(`Unable to load legacy CAMPORA state: ${error.message}`);
   if (data) {
     ordersStore = Array.isArray(data.orders) ? data.orders as CamporaOrder[] : [];
     usersStore = Array.isArray(data.users) ? data.users as StoredUser[] : [];
-    return;
+  } else {
+    // Start with an empty account; never seed fake customer/order records.
+    ordersStore = [];
+    usersStore = [];
   }
-  // Start with no fake customers or sample orders in production.
-  ordersStore = process.env.NODE_ENV === 'production' ? [] : JSON.parse(JSON.stringify(INITIAL_ORDERS));
-  usersStore = [];
   await persistState();
 }
 
 async function persistState(): Promise<void> {
+  const now = new Date().toISOString();
   const snapshot = {
     id: 'primary',
     orders: ordersStore,
     users: usersStore,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   };
-  // Serialize writes so concurrent requests cannot complete out of order.
-  stateWriteQueue = stateWriteQueue.then(async () => {
+  const customerRows = usersStore.map((user) => ({
+    id: user.id,
+    email: user.email.toLowerCase(),
+    full_name: user.name || '',
+    role: user.role || 'customer',
+    payload: user,
+    updated_at: now,
+  }));
+  const orderRows = ordersStore.map((order) => ({
+    id: order.id,
+    customer_id: order.customerId,
+    order_number: order.id,
+    service_id: order.serviceId || null,
+    service_name: order.serviceName || '',
+    status: order.status || 'new_order',
+    payment_status: order.paymentStatus || 'pending',
+    final_amount: Number.isFinite(Number(order.finalPrice ?? order.total)) ? Number(order.finalPrice ?? order.total) : 0,
+    payload: order,
+    updated_at: now,
+  }));
+
+  // Serialize writes; the indexed tables are the source of truth and the JSONB row
+  // remains a compatibility backup until the relational migration is fully proven.
+  stateWriteQueue = stateWriteQueue.catch(() => undefined).then(async () => {
+    if (customerRows.length) {
+      const { error } = await supabase.from('campora_customers').upsert(customerRows, { onConflict: 'id' });
+      if (error) throw new Error(`Unable to save CAMPORA customers: ${error.message}`);
+    }
+    if (orderRows.length) {
+      const { error } = await supabase.from('campora_orders').upsert(orderRows, { onConflict: 'id' });
+      if (error) throw new Error(`Unable to save CAMPORA orders: ${error.message}`);
+    }
     const { error } = await supabase.from('campora_app_state').upsert(snapshot, { onConflict: 'id' });
-    if (error) throw new Error(`Unable to save CAMPORA data to Supabase: ${error.message}`);
+    if (error) throw new Error(`Unable to save CAMPORA compatibility state: ${error.message}`);
   });
   await stateWriteQueue;
 }
@@ -239,7 +396,7 @@ app.get('/api/auth/me', (req: RequestWithUser, res: Response) => {
 });
 
 // Generate Official Google OAuth 2.0 Authorization URL
-app.get('/api/auth/google/url', (req: Request, res: Response) => {
+app.get('/api/auth/google/url', rateLimit('google-oauth-start', 20, 15 * 60 * 1000), (req: Request, res: Response) => {
   const origin = getRequestOrigin(req);
   const redirectUri = `${origin}/auth/callback/google`;
   const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
@@ -286,7 +443,7 @@ app.get('/api/auth/google/url', (req: Request, res: Response) => {
 });
 
 // Generate Official Microsoft OAuth 2.0 Authorization URL
-app.get('/api/auth/microsoft/url', (req: Request, res: Response) => {
+app.get('/api/auth/microsoft/url', rateLimit('microsoft-oauth-start', 20, 15 * 60 * 1000), (req: Request, res: Response) => {
   const origin = getRequestOrigin(req);
   const redirectUri = `${origin}/auth/callback/microsoft`;
   const msClientId = process.env.MICROSOFT_CLIENT_ID?.trim();
@@ -413,7 +570,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
     });
 
     const profile = await profileResponse.json();
-    if (!profile.email) {
+    if (!profile.email || profile.email_verified !== true) {
       throw new Error('Google account did not return a verified email address.');
     }
 
@@ -423,7 +580,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
     if (!user) {
       // Create new customer account with role 'customer'
       const newCustomer: StoredUser = {
-        id: `cust-${Date.now()}`,
+        id: 'cust-' + randomBytes(16).toString('hex'),
         name: profile.name || email.split('@')[0],
         email: email,
         avatar: profile.picture,
@@ -588,7 +745,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 
     if (!user) {
       const newCustomer: StoredUser = {
-        id: `cust-${Date.now()}`,
+        id: 'cust-' + randomBytes(16).toString('hex'),
         name: profile.displayName || email.split('@')[0],
         email: email,
         role: 'customer',
@@ -671,7 +828,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 });
 
 // Admin Login (Strictly separate from Customer Google Auth)
-app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
+app.post('/api/auth/admin/login', rateLimit('admin-login', 5, 15 * 60 * 1000), async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -680,7 +837,7 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
   }
 
   // Server-side validation against protected credentials
-  if (username.trim() === ADMIN_USERNAME && password.trim() === ADMIN_PASSWORD) {
+  if (username.trim() === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
     const adminUser: AuthUser = {
       id: 'admin-tanmay-1',
       name: 'Tanmay (CAMPORA Admin)',
@@ -709,76 +866,11 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
   res.status(401).json({ error: 'Invalid administrator credentials. Please check username and password.' });
 });
 
-// Customer Email/Password Login & Register
-app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
-  const { email, password, name, whatsapp, college } = req.body;
-
-  if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
-    res.status(400).json({ error: 'A valid email and password are required.' });
-    return;
-  }
-  if (password.length < 8) {
-    res.status(400).json({ error: 'Password must contain at least 8 characters.' });
-    return;
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  let user = usersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
-
-  if (!user) {
-    if (!name?.trim()) {
-      res.status(400).json({ error: 'Name is required when creating a customer account.' });
-      return;
-    }
-    const newCustomer: StoredUser = {
-      id: `cust-${Date.now()}`,
-      name: name.trim(),
-      email: normalizedEmail,
-      passwordHash: await bcrypt.hash(password, 12),
-      role: 'customer',
-      whatsapp: whatsapp?.trim() || '',
-      college: college?.trim() || '',
-      authProvider: 'email',
-      createdAt: new Date().toISOString(),
-    };
-    usersStore.push(newCustomer);
-    user = newCustomer;
-  } else {
-    if (!user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
-      res.status(401).json({ error: 'Invalid email or password.' });
-      return;
-    }
-    if (name && !user.name) user.name = name.trim();
-    if (whatsapp && !user.whatsapp) user.whatsapp = whatsapp.trim();
-    if (college && !user.college) user.college = college.trim();
-  }
-
-  await persistState();
-
-  const customerPayload: AuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    avatar: user.avatar,
-    role: 'customer',
-    whatsapp: user.whatsapp,
-    college: user.college,
-    authProvider: 'email',
-    createdAt: user.createdAt,
-  };
-
-  const token = jwt.sign(customerPayload, JWT_SECRET, { expiresIn: '7d' });
-
-  res.cookie('campora_session', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-
-  res.json({
-    success: true,
-    user: customerPayload,
+// Email/password sign-in is disabled until verified email delivery and account recovery are configured.
+// All current customer accounts use provider OAuth; do not create unverified email identities.
+app.post('/api/auth/customer/login', rateLimit('customer-login', 10, 15 * 60 * 1000), (_req: Request, res: Response) => {
+  res.status(410).json({
+    error: 'Email/password sign-in is not available yet. Please continue with your verified Google or Microsoft account.',
   });
 });
 
@@ -803,23 +895,23 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
 // ==========================================
 
 // Get authenticated customer's own orders ONLY
-app.get('/api/customer/orders', requireAuth, (req: RequestWithUser, res: Response) => {
+app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   
   // Filter exclusively for this customer
-  const userOrders = ordersStore
-    .filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase())
-    .map((o) => {
-      // Strip private admin notes before returning to customer
-      const { adminNotes, ...customerSafeOrder } = o;
+  const userOrders = await Promise.all(ordersStore
+    .filter((o) => o.customerId === user.id)
+    .map(async (o) => {
+      // Strip private admin notes before returning to customer.
+      const { adminNotes, ...customerSafeOrder } = await withSignedFileLinks(o);
       return customerSafeOrder;
-    });
+    }));
 
   res.json({ orders: userOrders });
 });
 
 // Get single order with strict ownership authorization
-app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Response) => {
+app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
 
@@ -831,13 +923,14 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
   }
 
   // Strict ownership check: Only owner customer or admin can access
-  if (user.role !== 'admin' && order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase()) {
+  if (user.role !== 'admin' && order.customerId !== user.id) {
     res.status(403).json({ error: 'Access Denied: You do not have permission to view this order.' });
     return;
   }
 
-  const { adminNotes, ...customerSafeOrder } = order;
-  res.json({ order: user.role === 'admin' ? order : customerSafeOrder });
+  const signedOrder = await withSignedFileLinks(order);
+  const { adminNotes, ...customerSafeOrder } = signedOrder;
+  res.json({ order: user.role === 'admin' ? signedOrder : customerSafeOrder });
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
@@ -896,6 +989,22 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
   const now = new Date().toISOString();
   const orderId = `CMP-${Date.now().toString().slice(-8)}`;
 
+  let savedTemplateFile: any = undefined;
+  let savedReferenceFiles: any[] = [];
+  try {
+    if (data.hasCollegeTemplate) {
+      savedTemplateFile = await persistIncomingAttachment(data.collegeTemplateFile, 'orders/' + orderId + '/customer');
+    }
+    const incomingReferences = Array.isArray(data.referenceFiles) ? data.referenceFiles : [];
+    if (incomingReferences.length > 10) throw new Error('You can attach a maximum of 10 reference files.');
+    savedReferenceFiles = await Promise.all(incomingReferences.map((file: any) =>
+      persistIncomingAttachment(file, 'orders/' + orderId + '/customer')
+    ));
+  } catch (uploadError: any) {
+    res.status(400).json({ error: uploadError.message || 'Unable to upload order attachments.' });
+    return;
+  }
+
   const newOrder: CamporaOrder = {
     id: orderId,
     customerId: user.id,
@@ -912,9 +1021,9 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
     deadline: typeof data.deadline === 'string' ? data.deadline : 'Standard (24-48 hrs)',
     instructions: typeof data.instructions === 'string' ? data.instructions.slice(0, 10000) : '',
     hasCollegeTemplate: Boolean(data.hasCollegeTemplate),
-    collegeTemplateFile: data.collegeTemplateFile,
+    collegeTemplateFile: savedTemplateFile,
     templateInstructions: typeof data.templateInstructions === 'string' ? data.templateInstructions.slice(0, 5000) : undefined,
-    referenceFiles: Array.isArray(data.referenceFiles) ? data.referenceFiles.slice(0, 10) : [],
+    referenceFiles: savedReferenceFiles,
     subtotal,
     finalPrice: total,
     discount,
@@ -946,7 +1055,7 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
 });
 
 // Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
-app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders/:id/payment', rateLimit('payment-proof', 8, 15 * 60 * 1000), requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
   const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body || {};
@@ -958,7 +1067,7 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   }
 
   const order = ordersStore[orderIndex];
-  if (user.role !== 'customer' || (order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase())) {
+  if (user.role !== 'customer' || order.customerId !== user.id) {
     res.status(403).json({ error: 'You cannot submit payment for this order.' });
     return;
   }
@@ -978,13 +1087,25 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     return;
   }
 
-  let safeScreenshotUrl: string | undefined;
+  const duplicateUtr = ordersStore.some((candidate) => candidate.id !== order.id && candidate.paymentDetails?.utrNumber?.toLowerCase() === cleanUtr.toLowerCase());
+  if (duplicateUtr) {
+    res.status(409).json({ error: 'This UPI reference number has already been submitted for another order.' });
+    return;
+  }
+
+  let screenshotStoragePath: string | undefined;
   if (typeof screenshotUrl === 'string' && screenshotUrl.trim()) {
     if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(screenshotUrl) || screenshotUrl.length > 700000) {
       res.status(400).json({ error: 'Payment screenshot must be a PNG or JPG image under 500 KB.' });
       return;
     }
-    safeScreenshotUrl = screenshotUrl;
+    try {
+      const storedScreenshot = await uploadPrivateDataUrl('orders/' + order.id + '/payments', screenshotName || 'payment-proof.png', screenshotUrl, 500 * 1024);
+      screenshotStoragePath = storedScreenshot.storagePath;
+    } catch (uploadError: any) {
+      res.status(400).json({ error: uploadError.message || 'Unable to store payment screenshot securely.' });
+      return;
+    }
   }
 
   const payableAmount = order.finalPrice ?? order.total;
@@ -1009,9 +1130,9 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
       utrNumber: cleanUtr,
-      screenshotUrl: safeScreenshotUrl,
-      screenshotName: safeScreenshotUrl ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
-      screenshotSize: safeScreenshotUrl && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
+      screenshotStoragePath,
+      screenshotName: screenshotStoragePath ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
+      screenshotSize: screenshotStoragePath && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
       submittedAt: now,
       amountPaid: payableAmount,
     },
@@ -1023,13 +1144,17 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   await persistState();
 
   const { adminNotes, ...customerSafeOrder } = updatedOrder;
-  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
+  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: await withSignedFileLinks(customerSafeOrder as CamporaOrder) });
 });
 
 // Customer profile & stats
 app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Response) => {
   const user = req.user!;
-  const userOrders = ordersStore.filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase());
+  if (user.role !== 'customer') {
+    res.status(403).json({ error: 'Customer profile access is required.' });
+    return;
+  }
+  const userOrders = ordersStore.filter((o) => o.customerId === user.id);
   
   const totalSpent = userOrders.filter((o) => o.paymentStatus === 'paid').reduce((sum, o) => sum + (o.finalPrice || o.total), 0);
   const activeOrders = userOrders.filter((o) => o.status !== 'completed' && o.status !== 'cancelled');
@@ -1053,7 +1178,7 @@ app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Respon
 // ==========================================
 
 // Dashboard Overview Metrics
-app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/overview', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const totalOrders = ordersStore.length;
   const newOrders = ordersStore.filter((o) => o.status === 'new_order').length;
   const pendingApproval = ordersStore.filter((o) => o.status === 'new_order' || o.status === 'under_review' || o.status === 'requirements_review').length;
@@ -1076,12 +1201,12 @@ app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Respon
       cancelledOrders,
       totalRevenue,
     },
-    recentOrders: ordersStore.slice(0, 10),
+    recentOrders: await Promise.all(ordersStore.slice(0, 10).map(withSignedFileLinks)),
   });
 });
 
 // Admin All Orders with query filters
-app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.get('/api/admin/orders', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const { status, paymentStatus, search, sort } = req.query as {
     status?: string;
     paymentStatus?: string;
@@ -1116,7 +1241,7 @@ app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response)
     filtered.reverse();
   }
 
-  res.json({ orders: filtered, total: filtered.length });
+  res.json({ orders: await Promise.all(filtered.map(withSignedFileLinks)), total: filtered.length });
 });
 
 // Admin Order Status Update (Approve, Reject, Cancel, In Progress, Review, Completed)
@@ -1135,7 +1260,16 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
   }
 
   const order = ordersStore[orderIndex];
-  const now = 'Just now';
+  const allowedStatuses: OrderStatus[] = ['new_order', 'under_review', 'approved', 'payment_pending', 'verification_pending', 'payment_confirmed', 'in_progress', 'review', 'completed', 'cancelled', 'rejected', 'requirements_review', 'quote_sent'];
+  if (!allowedStatuses.includes(status)) {
+    res.status(400).json({ error: 'Invalid order status.' });
+    return;
+  }
+  if (['in_progress', 'review', 'completed'].includes(status) && order.paymentStatus !== 'paid') {
+    res.status(409).json({ error: 'Work cannot move forward until payment has been verified.' });
+    return;
+  }
+  const now = new Date().toISOString();
 
   let updatedTimeline = [...order.timeline];
 
@@ -1190,6 +1324,65 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
   res.json({ success: true, order: updatedOrder });
+});
+
+// Admin sends a final quote before enabling payment for review-required work.
+app.patch('/api/admin/orders/:id/quote', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const orderId = req.params.id;
+  const amount = Number(req.body?.finalPrice);
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 1000) : '';
+
+  const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
+  if (orderIndex === -1) {
+    res.status(404).json({ error: 'Order not found.' });
+    return;
+  }
+  const order = ordersStore[orderIndex];
+  if (order.paymentStatus === 'paid' || order.status === 'cancelled' || order.status === 'rejected') {
+    res.status(409).json({ error: 'This order cannot receive a new quote in its current state.' });
+    return;
+  }
+  if (!Number.isFinite(amount) || amount < 1 || amount > 100000) {
+    res.status(400).json({ error: 'Enter a valid final quote between ₹1 and ₹100,000.' });
+    return;
+  }
+  if (order.isPackage && amount !== 499) {
+    res.status(400).json({ error: 'The Complete Internship Package has a fixed price of ₹499 and is not discountable.' });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const timeline = [...(order.timeline || [])].map((step) => {
+    if (step.id === 't2' || step.title.toLowerCase().includes('review') || step.title.toLowerCase().includes('approval')) {
+      return { ...step, title: 'Quote Approved', description: message || 'CAMPORA reviewed the requirements and confirmed the final quote.', status: 'completed' as const, timestamp: now };
+    }
+    if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
+      return { ...step, title: 'Payment Awaiting', description: 'Pay the confirmed amount by UPI and submit the UTR for verification.', status: 'current' as const, timestamp: now };
+    }
+    return step;
+  });
+  if (!timeline.some((step) => step.title === 'Payment Awaiting')) {
+    timeline.push({ id: 'quote-payment-' + Date.now(), title: 'Payment Awaiting', description: 'Pay the confirmed amount by UPI and submit the UTR for verification.', timestamp: now, status: 'current' });
+  }
+
+  const updatedOrder: CamporaOrder = {
+    ...order,
+    finalPrice: amount,
+    total: amount,
+    discount: 0,
+    couponCode: undefined,
+    discountEligible: !order.isPackage,
+    quoteStatus: 'sent',
+    paymentStatus: 'pending',
+    status: 'approved',
+    requiresReview: false,
+    reviewReason: message || 'Final quote confirmed by CAMPORA.',
+    timeline,
+    updatedAt: now,
+  };
+  ordersStore[orderIndex] = updatedOrder;
+  await persistState();
+  res.json({ success: true, message: 'Quote sent. The customer can now submit UPI payment proof.', order: await withSignedFileLinks(updatedOrder) });
 });
 
 // Admin Payment Verification (Confirm or Reject)
@@ -1298,7 +1491,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 // Admin Upload Completed Deliverable
 app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
-  const { title, fileType, fileSize, downloadUrl } = req.body;
+  const { title, fileType, fileData, fileName } = req.body || {};
 
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
   if (orderIndex === -1) {
@@ -1307,26 +1500,41 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
   }
 
   const order = ordersStore[orderIndex];
+  if (order.paymentStatus !== 'paid') {
+    res.status(409).json({ error: 'A deliverable cannot be marked complete until payment is verified.' });
+    return;
+  }
 
+  let storedFile: { storagePath: string; contentType: string; size: number };
+  try {
+    storedFile = await uploadPrivateDataUrl('orders/' + order.id + '/deliverables', fileName || title || 'completed-work', fileData);
+  } catch (uploadError: any) {
+    res.status(400).json({ error: uploadError.message || 'Unable to upload completed work.' });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const safeTitle = typeof title === 'string' && title.trim()
+    ? title.trim().slice(0, 180)
+    : path.basename(String(fileName || 'Completed_Deliverable')).slice(0, 180);
   const newDeliverable: DeliverableFile = {
-    id: `del-${Date.now()}`,
-    title: title?.trim() || `${order.serviceName.replace(/\s+/g, '_')}_Final_Deliverable.${fileType?.toLowerCase() || 'pdf'}`,
-    fileType: (fileType || 'PDF').toUpperCase(),
-    fileSize: fileSize || '2.4 MB',
-    uploadedAt: 'Today, Just now',
-    downloadUrl: downloadUrl || '#',
+    id: 'del-' + randomBytes(8).toString('hex'),
+    title: safeTitle,
+    fileType: (typeof fileType === 'string' ? fileType : storedFile.contentType).toUpperCase(),
+    fileSize: (storedFile.size / (1024 * 1024)).toFixed(2) + ' MB',
+    uploadedAt: now,
+    storagePath: storedFile.storagePath,
   };
 
   const updatedDeliverables = [...(order.deliverables || []), newDeliverable];
-
   const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
     if (step.id === 't5' || step.title.toLowerCase().includes('delivery') || step.title.toLowerCase().includes('completed')) {
       return {
         ...step,
         title: 'Completed & Delivered',
-        description: `Deliverable uploaded: ${newDeliverable.title}`,
+        description: 'Deliverable uploaded: ' + newDeliverable.title,
         status: 'completed' as const,
-        timestamp: 'Just now',
+        timestamp: now,
       };
     }
     return step;
@@ -1338,12 +1546,12 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
     progressPercent: 100,
     deliverables: updatedDeliverables,
     timeline: updatedTimeline,
-    updatedAt: 'Just now',
+    updatedAt: now,
   };
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
-  res.json({ success: true, message: 'Completed deliverable uploaded successfully.', order: updatedOrder });
+  res.json({ success: true, message: 'Completed deliverable uploaded successfully.', order: await withSignedFileLinks(updatedOrder) });
 });
 
 // Admin Private Notes
@@ -1402,10 +1610,10 @@ app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Respo
 });
 
 // Admin File Repository Aggregator
-app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const files: any[] = [];
 
-  ordersStore.forEach((ord) => {
+  for (const ord of ordersStore) {
     if (ord.collegeTemplateFile) {
       files.push({
         id: ord.collegeTemplateFile.id,
@@ -1416,11 +1624,12 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
         fileType: ord.collegeTemplateFile.type,
         size: ord.collegeTemplateFile.size,
         uploadedAt: ord.collegeTemplateFile.uploadedAt || ord.createdAt,
+        downloadUrl: ord.collegeTemplateFile.storagePath ? await createPrivateSignedUrl(ord.collegeTemplateFile.storagePath) : undefined,
       });
     }
 
     if (ord.referenceFiles?.length) {
-      ord.referenceFiles.forEach((rf) => {
+      for (const rf of ord.referenceFiles) {
         files.push({
           id: rf.id,
           orderId: ord.id,
@@ -1430,11 +1639,12 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
           fileType: rf.type,
           size: rf.size,
           uploadedAt: rf.uploadedAt || ord.createdAt,
+          downloadUrl: rf.storagePath ? await createPrivateSignedUrl(rf.storagePath) : undefined,
         });
-      });
+      }
     }
 
-    if (ord.paymentDetails?.screenshotUrl || ord.paymentDetails?.screenshotName) {
+    if (ord.paymentDetails?.screenshotUrl || ord.paymentDetails?.screenshotStoragePath || ord.paymentDetails?.screenshotName) {
       files.push({
         id: `ss-${ord.id}`,
         orderId: ord.id,
@@ -1444,12 +1654,12 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
         fileType: 'image/png',
         size: ord.paymentDetails.screenshotSize || '350 KB',
         uploadedAt: ord.paymentDetails.submittedAt || ord.updatedAt,
-        previewUrl: ord.paymentDetails.screenshotUrl,
+        previewUrl: ord.paymentDetails.screenshotStoragePath ? await createPrivateSignedUrl(ord.paymentDetails.screenshotStoragePath) : ord.paymentDetails.screenshotUrl,
       });
     }
 
     if (ord.deliverables?.length) {
-      ord.deliverables.forEach((del) => {
+      for (const del of ord.deliverables) {
         files.push({
           id: del.id,
           orderId: ord.id,
@@ -1459,11 +1669,11 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
           fileType: del.fileType,
           size: del.fileSize,
           uploadedAt: del.uploadedAt,
-          downloadUrl: del.downloadUrl,
+          downloadUrl: del.storagePath ? await createPrivateSignedUrl(del.storagePath) : del.downloadUrl,
         });
-      });
+      }
     }
-  });
+  }
 
   res.json({ files });
 });

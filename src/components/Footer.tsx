@@ -1,13 +1,12 @@
 import React from 'react';
-import { MessageCircle, Clock, ShieldCheck, Mail, Instagram, ArrowRight, FileText, Shield } from 'lucide-react';
+import { MessageCircle, Clock, ShieldCheck, Mail, Instagram, ArrowRight, FileText } from 'lucide-react';
 
 interface FooterProps {
   onSelectTab: (tab: string) => void;
   onOpenOrderModal: () => void;
-  onOpenAdmin?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal, onOpenAdmin }) => {
+export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal }) => {
   const whatsappNumber = '917559225529';
   const defaultMsg = encodeURIComponent('Hi CAMPORA team, I would like to place an order.');
 
@@ -40,7 +39,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal, o
               </div>
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#D4A72C]" />
-                <span>100% Confidential</span>
+                <span>Private file access</span>
               </div>
             </div>
           </div>
@@ -51,27 +50,16 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal, o
               Quick Navigation
             </h4>
             <ul className="space-y-2 text-xs">
-              {['home', 'services', 'how-it-works', 'portfolio', 'faq', 'tracking'].map((item) => (
+              {['home', 'services', 'how-it-works', 'portfolio', 'faq', 'contact'].map((item) => (
                 <li key={item}>
                   <button
                     onClick={() => onSelectTab(item)}
                     className="hover:text-[#D4A72C] transition-colors capitalize text-left"
                   >
-                    {item === 'services' ? 'Services & Pricing' : item === 'how-it-works' ? 'How It Works' : item === 'tracking' ? 'Live Order Tracking' : item}
+                    {item === 'services' ? 'Services & Pricing' : item === 'how-it-works' ? 'How It Works' : item === 'contact' ? 'Contact' : item}
                   </button>
                 </li>
               ))}
-              {onOpenAdmin && (
-                <li>
-                  <button
-                    onClick={onOpenAdmin}
-                    className="text-[#F0D27A] hover:underline flex items-center gap-1 text-left font-semibold"
-                  >
-                    <Shield className="w-3 h-3" />
-                    <span>Admin Operations Desk</span>
-                  </button>
-                </li>
-              )}
             </ul>
           </div>
 
@@ -103,7 +91,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal, o
               </li>
               <li>
                 <button onClick={() => onSelectTab('services')} className="hover:text-[#D4A72C]">
-                  Urgent 3-Hour PPT Delivery
+                  Urgent PPT (quote first)
                 </button>
               </li>
             </ul>
@@ -151,7 +139,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal, o
           </div>
           <div className="flex items-center gap-6">
             <span>Academic Guidelines Compliant</span>
-            <span>Zero AI / Plagiarism Guaranteed</span>
+            <span>Clear scope • Student-first support • Secure file access</span>
           </div>
         </div>
 

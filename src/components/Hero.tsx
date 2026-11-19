@@ -21,7 +21,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
             
             {/* Top Micro-Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#171717] border border-[#D4A72C]/40 shadow-sm text-xs font-semibold text-[#F0D27A]">
-              <span className="w-2 h-2 rounded-full bg-[#D4A72C] animate-ping" />
+              <span className="w-2 h-2 rounded-full bg-[#D4A72C]" />
               <Clock className="w-3.5 h-3.5 text-[#D4A72C]" />
               <span>6 AM – 12 AM SUPPORT</span>
             </div>
@@ -36,7 +36,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
 
             {/* Subtitle */}
             <p className="text-base sm:text-lg text-[#B8B8B8] max-w-xl mx-auto lg:mx-0 leading-relaxed font-normal">
-              PPTs, reports, posters, academic documentation and internship support — fast, professional and hassle-free. Focus on what matters, we handle the rest.
+              Presentations, reports, posters and internship documentation support — with clear pricing, a straightforward order process and updates in your dashboard.
             </p>
 
             {/* Primary Action Buttons */}
@@ -67,7 +67,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                 </div>
                 <div>
                   <div className="text-xs font-bold text-white">Fast Delivery</div>
-                  <div className="text-[11px] text-[#858585]">From 3 hrs</div>
+                  <div className="text-[11px] text-[#858585]">Depends on service</div>
                 </div>
               </div>
 
@@ -76,8 +76,8 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   <Award className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">Quality Work</div>
-                  <div className="text-[11px] text-[#858585]">100% Original</div>
+                  <div className="text-xs font-bold text-white">Clear Scope</div>
+                  <div className="text-[11px] text-[#858585]">Defined deliverables</div>
                 </div>
               </div>
 
@@ -86,8 +86,8 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   <Shield className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">Confidential</div>
-                  <div className="text-[11px] text-[#858585]">Safe & Private</div>
+                  <div className="text-xs font-bold text-white">Private Access</div>
+                  <div className="text-[11px] text-[#858585]">Order-scoped files</div>
                 </div>
               </div>
 
@@ -133,9 +133,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                     <div className="w-3 h-3 rounded-full bg-[#35C759]/80" />
                     <span className="ml-2 text-xs font-mono text-[#B8B8B8]">presentation_v2.pptx</span>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#35C759]/15 text-[#35C759] border border-[#35C759]/30">
-                    <CheckCircle2 className="w-3 h-3" /> Ready
-                  </span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#D4A72C]/10 text-[#F0D27A] border border-[#D4A72C]/30">Sample</span>
                 </div>
 
                 {/* Mock Presentation Slide Body */}
@@ -192,7 +190,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   {/* Card bottom bar */}
                   <div className="pt-2 flex items-center justify-between text-xs text-[#858585]">
                     <span className="flex items-center gap-1.5 text-[#B8B8B8]">
-                      <Sparkles className="w-3.5 h-3.5 text-[#D4A72C]" /> Crafted by Senior Academic Designer
+                      <Sparkles className="w-3.5 h-3.5 text-[#D4A72C]" /> Example design direction
                     </span>
                     <span className="font-mono text-[11px] text-[#858585]">Sample layout</span>
                   </div>
@@ -204,10 +202,10 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
               {/* Floating review badge */}
               <div className="absolute -bottom-5 -right-4 bg-[#171717] border border-[#2A2A2A] rounded-xl p-3 shadow-xl flex items-center gap-3 backdrop-blur-md">
                 <div className="w-10 h-10 rounded-full bg-[#D4A72C]/15 border border-[#D4A72C]/30 flex items-center justify-center font-bold text-[#F0D27A] text-sm">
-                  4.9★
+                  C
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">Illustrative Layout</div>
+                  <div className="text-xs font-bold text-white">Sample Preview</div>
                   <div className="text-[10px] text-[#858585]">Sample preview • Not client work</div>
                 </div>
               </div>

@@ -34,8 +34,6 @@ export const SERVICES_DATA: ServiceItem[] = [
     pricingType: 'fixed',
     maxIncludedPages: 20,
     supportsTemplate: true,
-    popular: true,
-    tag: 'MOST POPULAR',
     description: 'Custom corporate graphics, infographic visualizations, animations, and topic research.',
     features: [
       'Up to 20 Custom Slides Included',
@@ -64,8 +62,8 @@ export const SERVICES_DATA: ServiceItem[] = [
       'Delivered in 1–3 Hours',
       'Starting from ₹400 (Quote Review)',
       'Dedicated Lead Designer',
-      'Instant WhatsApp Updates',
-      '100% On-time Guarantee',
+      'WhatsApp updates during support hours',
+      'Timeline confirmed during quote review',
       'Editable .PPTX + PDF export'
     ],
   },
@@ -88,7 +86,7 @@ export const SERVICES_DATA: ServiceItem[] = [
       'College/University Template Alignment',
       'Automated Table of Contents',
       'Referencing & Citations',
-      'Plagiarism Checked & Word/PDF'
+      'Editable Word & PDF formats'
     ],
   },
   {
@@ -122,9 +120,7 @@ export const SERVICES_DATA: ServiceItem[] = [
     pricingType: 'fixed',
     maxIncludedPages: 20,
     supportsTemplate: true,
-    popular: true,
-    tag: 'RECOMMENDED',
-    description: 'Comprehensive industry internship report including certificates, weekly logs, and project findings.',
+    description: 'Structured internship report based on your genuine internship details, project work and supporting documents.',
     features: [
       'Up to 20 Formatted Pages Included',
       'Company Overview & Architecture',
@@ -193,7 +189,7 @@ export const SERVICES_DATA: ServiceItem[] = [
   // Internship Support
   {
     id: 'internship-package',
-    title: 'Internship Completion + Certification + Report',
+    title: 'Complete Internship Package',
     category: 'internship',
     price: 499,
     currency: '₹',
@@ -202,14 +198,12 @@ export const SERVICES_DATA: ServiceItem[] = [
     pricingType: 'fixed',
     maxIncludedPages: 40,
     supportsTemplate: true,
-    popular: true,
-    tag: 'MOST POPULAR',
-    description: 'Legitimate internship assistance, project documentation, certificate layout, and viva guidance.',
+    description: 'Internship documentation support based on your genuine internship or project details, including report formatting, certificate layout design and viva preparation.',
     features: [
       'Comprehensive Formatted Project Report',
-      'Viva-Ready Presentation Deck (15-20 Slides)',
-      'Weekly Activity Log Sheets & Timesheets',
-      'Top 25 Viva Voce Questions & Answers Guide',
+      'Presentation deck (15-20 slides)',
+      'Weekly activity log templates based on supplied details',
+      'Viva preparation questions and answers guide',
       'Priority 6 AM – 12 AM WhatsApp Assistance'
     ],
   },
@@ -312,7 +306,7 @@ export const INITIAL_ORDERS: CamporaOrder[] = [
       { id: 't2', title: 'Requirements Confirmed', description: 'Topic & VIT template verified by lead designer', timestamp: 'Oct 24, 10:30 AM', status: 'completed' },
       { id: 't3', title: 'Payment Completed', description: 'Payment of ₹300 confirmed (UTR: 429810238491)', timestamp: 'Oct 24, 11:15 AM', status: 'completed' },
       { id: 't4', title: 'Work In Progress', description: 'Senior designer is crafting slide graphics in VIT template (68% complete)', timestamp: 'Active Now', status: 'current' },
-      { id: 't5', title: 'Quality & Plagiarism Review', description: 'Senior editor checks formatting guidelines and readability', status: 'pending' },
+      { id: 't5', title: 'Quality Review', description: 'Formatting, structure and readability review', status: 'pending' },
       { id: 't6', title: 'Final Delivery', description: 'Downloadable .pptx & high-res PDF available in dashboard', status: 'pending' }
     ],
     deliverables: []
@@ -462,12 +456,11 @@ export const INITIAL_ORDERS: CamporaOrder[] = [
       { id: 't2', title: 'Requirements Confirmed', description: 'Specifications approved', timestamp: 'Oct 18, 02:45 PM', status: 'completed' },
       { id: 't3', title: 'Payment Completed', description: 'Verified', timestamp: 'Oct 18, 03:00 PM', status: 'completed' },
       { id: 't4', title: 'Work In Progress', description: 'Drafting completed in VIT format', timestamp: 'Oct 19, 11:00 AM', status: 'completed' },
-      { id: 't5', title: 'Quality Review', description: 'Zero plagiarism certified (Turnitin)', timestamp: 'Oct 19, 02:30 PM', status: 'completed' },
+      { id: 't5', title: 'Quality Review', description: 'Formatting and citation presentation reviewed', timestamp: 'Oct 19, 02:30 PM', status: 'completed' },
       { id: 't6', title: 'Completed', description: 'Delivered on time', timestamp: 'Oct 19, 03:50 PM', status: 'completed' }
     ],
     deliverables: [
       { id: 'del-1', title: 'Renewable_Battery_Research_Final.docx', fileType: 'DOCX', fileSize: '1.8 MB', uploadedAt: 'Oct 19, 03:50 PM', downloadUrl: '#' },
-      { id: 'del-2', title: 'Turnitin_Plagiarism_Report.pdf', fileType: 'PDF', fileSize: '420 KB', uploadedAt: 'Oct 19, 03:50 PM', downloadUrl: '#' }
     ]
   },
   {
@@ -562,7 +555,7 @@ export const FAQ_DATA: FAQItem[] = [
   {
     category: 'College Templates',
     question: 'Can you follow my university’s official formatting template?',
-    answer: 'Yes, absolutely! College Template Support is a core CAMPORA feature. Simply upload your university or department template (PDF, DOCX, PPTX, etc.) during checkout, and our designers will strictly follow your prescribed fonts, logos, slide masters, and cover page rules.'
+    answer: 'Yes. If the selected service supports templates, upload your university or department format during checkout and include any specific instructions. We will use it as the formatting reference for the work.'
   },
   {
     category: 'Pricing & Limits',
@@ -571,23 +564,23 @@ export const FAQ_DATA: FAQItem[] = [
   },
   {
     category: 'Quality & Authenticity',
-    question: 'Is the work 100% original and plagiarism-free?',
-    answer: 'Yes, completely. Every document, presentation, and report is crafted from scratch according to your specific topic, syllabus, and guidelines. We verify formatting and originality before delivery.'
+    question: 'How do you handle originality and citations?',
+    answer: 'We prepare work from the brief and source material agreed for your order, and can format citations where requested. We do not promise a specific similarity score or provide a Turnitin report unless that is explicitly part of an agreed service. Students should review the work and follow their institution’s academic integrity rules.'
   },
   {
     category: 'Support & Revisions',
     question: 'What if my professor asks for changes or feedback?',
-    answer: 'All our orders include free revisions! If your professor suggests modifications or adjustments, message our 6 AM – 12 AM WhatsApp desk (+91 75592 25529) and we will update your files promptly.'
+    answer: 'Revision availability depends on the selected service and the scope confirmed before work begins. If a revision is included, contact us during support hours with the requested changes and your order ID.'
   },
   {
     category: 'Payment & Privacy',
     question: 'Is my personal information and college details safe?',
-    answer: '100% confidential. We operate under strict privacy protocols. Student files, identity, and university details are handled privately and never shared or published.'
+    answer: 'Order files are stored in a private bucket and access is restricted to the customer account and authorized CAMPORA administrators. We use submitted details to process and support the order, and do not publish customer files.'
   },
   {
     category: 'Internship Support',
-    question: 'What is included in the ₹499 Internship Completion + Certification + Report package?',
-    answer: 'The package covers legitimate academic internship assistance: a comprehensive formatted Project Report, a 15-20 slide Presentation Deck, signed-ready weekly/monthly work logs, and a curated Top 25 Viva Voce Q&A prep guide.'
+    question: 'What is included in the ₹499 Complete Internship Package?',
+    answer: 'The package covers internship documentation support using the student’s genuine internship or project details: report formatting, a presentation deck, activity-log templates and viva preparation. CAMPORA does not issue third-party internship certificates.'
   }
 ];
 

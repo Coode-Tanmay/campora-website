@@ -50,7 +50,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
             Transparent Pricing. Zero Hidden Fees.
           </h2>
           <p className="text-[#B8B8B8] text-sm sm:text-base mt-3">
-            Premium academic support engineered for high grades. Fixed transparent rates up to 20 pages/slides with revisions and university template support included.
+            Presentations, reports, documentation and design services with clear scopes, service-specific turnaround times and upfront pricing where available.
           </p>
 
           {/* Pricing notification banner */}
