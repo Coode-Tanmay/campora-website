@@ -533,7 +533,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
     if (!user) {
       // Create new customer account with role 'customer'
       const newCustomer: StoredUser = {
-        id: `cust-${Date.now()}`,
+        id: 'cust-' + randomBytes(16).toString('hex'),
         name: profile.name || email.split('@')[0],
         email: email,
         avatar: profile.picture,
@@ -698,7 +698,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 
     if (!user) {
       const newCustomer: StoredUser = {
-        id: `cust-${Date.now()}`,
+        id: 'cust-' + randomBytes(16).toString('hex'),
         name: profile.displayName || email.split('@')[0],
         email: email,
         role: 'customer',
