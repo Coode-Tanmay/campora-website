@@ -84,7 +84,6 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [appliedDiscount, setAppliedDiscount] = useState(0);
   const [couponError, setCouponError] = useState('');
   const [couponSuccess, setCouponSuccess] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'whatsapp'>('upi');
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderCompletedSuccess, setOrderCompletedSuccess] = useState(false);
   const [createdOrderSummary, setCreatedOrderSummary] = useState<CamporaOrder | null>(null);
@@ -1040,54 +1039,20 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                     <p className="text-xs text-[#B8B8B8] mt-1">
                       {requiresAdminReview
                         ? 'Submit your brief. We will review and send confirmation + payment link to your WhatsApp.'
-                        : 'Choose your payment gateway to initiate immediate production.'}
+                        : 'Submit your order first. Payment is made by UPI after order approval and is verified manually before work begins.'}
                     </p>
                   </div>
 
                   {!requiresAdminReview ? (
                     <div className="space-y-3 pt-1">
-                      <div className="grid grid-cols-3 gap-2.5">
-                        <button
-                          type="button"
-                          id="pay-method-upi"
-                          onClick={() => setPaymentMethod('upi')}
-                          className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all ${
-                            paymentMethod === 'upi'
-                              ? 'bg-[#1D1D1D] border-[#D4A72C] text-white ring-1 ring-[#D4A72C]'
-                              : 'bg-[#171717] border-[#2A2A2A] text-[#858585] hover:border-[#D4A72C]/40'
-                          }`}
-                        >
-                          <QrCode className="w-5 h-5 text-[#D4A72C]" />
-                          <span>UPI / GPay / QR</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          id="pay-method-card"
-                          onClick={() => setPaymentMethod('card')}
-                          className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all ${
-                            paymentMethod === 'card'
-                              ? 'bg-[#1D1D1D] border-[#D4A72C] text-white ring-1 ring-[#D4A72C]'
-                              : 'bg-[#171717] border-[#2A2A2A] text-[#858585] hover:border-[#D4A72C]/40'
-                          }`}
-                        >
-                          <CreditCard className="w-5 h-5 text-[#D4A72C]" />
-                          <span>Cards / NetBanking</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          id="pay-method-whatsapp"
-                          onClick={() => setPaymentMethod('whatsapp')}
-                          className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all ${
-                            paymentMethod === 'whatsapp'
-                              ? 'bg-[#35C759]/15 border-[#35C759] text-white ring-1 ring-[#35C759]'
-                              : 'bg-[#171717] border-[#2A2A2A] text-[#858585] hover:border-[#D4A72C]/40'
-                          }`}
-                        >
-                          <Phone className="w-5 h-5 text-[#35C759]" />
-                          <span>Pay via WhatsApp</span>
-                        </button>
+                      <div className="rounded-2xl border border-[#2A2A2A] bg-[#171717] p-4 flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-[#D4A72C]/10 border border-[#D4A72C]/30 flex items-center justify-center shrink-0">
+                          <QrCode className="w-4 h-4 text-[#D4A72C]" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-white">Manual UPI payment</div>
+                          <p className="text-xs text-[#B8B8B8] mt-1 leading-relaxed">Submit your order first. After approval, use the payment details in your dashboard and submit the UTR number and receipt. CAMPORA verifies the payment before starting work.</p>
+                        </div>
                       </div>
 
                       <div className="bg-[#171717] border border-[#2A2A2A] rounded-2xl p-4 text-xs space-y-2">
@@ -1112,7 +1077,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                         <span>Quote Review Process</span>
                       </div>
                       <p className="text-[#B8B8B8] leading-relaxed">
-                        Because your order has custom scope or exceeded 20 pages/slides, our academic team will review your guidelines immediately. You will receive a final confirmed price & payment link within 15–30 minutes on WhatsApp ({whatsappNumber}).
+                        Because your order needs a custom quote, the CAMPORA team will review the scope and contact you with the final price. No payment is due until the quote is approved.
                       </p>
                     </div>
                   )}
@@ -1165,7 +1130,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                       </>
                     ) : (
                       <>
-                        <span>{requiresAdminReview ? 'Submit for Quote Review' : `Pay ₹${finalTotal} & Track Order`}</span>
+                        <span>{requiresAdminReview ? 'Submit for Quote Review' : 'Submit Order'}</span>
                         <CheckCircle2 className="w-4 h-4" />
                       </>
                     )}
@@ -1208,11 +1173,11 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[#858585]">Confidentiality:</span>
-                    <span className="text-[#35C759] font-semibold">100% Private</span>
+                    <span className="text-[#35C759] font-semibold">Private access</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[#858585]">Revisions:</span>
-                    <span className="text-[#35C759] font-semibold">Free Included</span>
+                    <span className="text-[#B8B8B8] font-semibold">Service-specific</span>
                   </div>
                 </div>
 
