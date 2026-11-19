@@ -67,8 +67,8 @@ export const WhyUs: React.FC = () => {
               </p>
             </div>
             <div className="mt-4 pt-3 border-t border-[#2A2A2A] flex items-center gap-2 text-xs font-semibold text-[#35C759]">
-              <span className="w-2 h-2 rounded-full bg-[#35C759] animate-pulse" />
-              <span>6 AM – 12 AM Active</span>
+              <Clock className="w-3.5 h-3.5" />
+              <span>Support hours: 6 AM – 12 AM</span>
             </div>
           </div>
 
