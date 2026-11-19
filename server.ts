@@ -1572,7 +1572,7 @@ app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Respo
 app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const files: any[] = [];
 
-  ordersStore.forEach((ord) => {
+  for (const ord of ordersStore) {
     if (ord.collegeTemplateFile) {
       files.push({
         id: ord.collegeTemplateFile.id,
@@ -1601,7 +1601,7 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
       });
     }
 
-    if (ord.paymentDetails?.screenshotUrl || ord.paymentDetails?.screenshotName) {
+    if (ord.paymentDetails?.screenshotUrl || ord.paymentDetails?.screenshotStoragePath || ord.paymentDetails?.screenshotName) {
       files.push({
         id: `ss-${ord.id}`,
         orderId: ord.id,
@@ -1626,11 +1626,11 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
           fileType: del.fileType,
           size: del.fileSize,
           uploadedAt: del.uploadedAt,
-          downloadUrl: del.downloadUrl,
+          downloadUrl: del.storagePath ? await createPrivateSignedUrl(del.storagePath) : del.downloadUrl,
         });
       });
     }
-  });
+  }
 
   res.json({ files });
 });
