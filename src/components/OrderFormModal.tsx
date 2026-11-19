@@ -204,7 +204,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   };
 
   const handleReferenceFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files || []);
+    const selected: File[] = Array.from(e.target.files || []);
     if (!selected.length) return;
     if (referenceFiles.length + selected.length > 10) {
       setStepError('You can attach a maximum of 10 reference files.');
