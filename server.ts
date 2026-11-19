@@ -40,6 +40,7 @@ const ALLOWED_UPLOAD_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/zip',
+  'application/x-zip-compressed',
   'image/jpeg',
   'image/png',
 ]);
