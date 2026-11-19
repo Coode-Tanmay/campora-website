@@ -1326,6 +1326,65 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
   res.json({ success: true, order: updatedOrder });
 });
 
+// Admin sends a final quote before enabling payment for review-required work.
+app.patch('/api/admin/orders/:id/quote', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const orderId = req.params.id;
+  const amount = Number(req.body?.finalPrice);
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 1000) : '';
+
+  const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
+  if (orderIndex === -1) {
+    res.status(404).json({ error: 'Order not found.' });
+    return;
+  }
+  const order = ordersStore[orderIndex];
+  if (order.paymentStatus === 'paid' || order.status === 'cancelled' || order.status === 'rejected') {
+    res.status(409).json({ error: 'This order cannot receive a new quote in its current state.' });
+    return;
+  }
+  if (!Number.isFinite(amount) || amount < 1 || amount > 100000) {
+    res.status(400).json({ error: 'Enter a valid final quote between ₹1 and ₹100,000.' });
+    return;
+  }
+  if (order.isPackage && amount !== 499) {
+    res.status(400).json({ error: 'The Complete Internship Package has a fixed price of ₹499 and is not discountable.' });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const timeline = [...(order.timeline || [])].map((step) => {
+    if (step.id === 't2' || step.title.toLowerCase().includes('review') || step.title.toLowerCase().includes('approval')) {
+      return { ...step, title: 'Quote Approved', description: message || 'CAMPORA reviewed the requirements and confirmed the final quote.', status: 'completed' as const, timestamp: now };
+    }
+    if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
+      return { ...step, title: 'Payment Awaiting', description: 'Pay the confirmed amount by UPI and submit the UTR for verification.', status: 'current' as const, timestamp: now };
+    }
+    return step;
+  });
+  if (!timeline.some((step) => step.title === 'Payment Awaiting')) {
+    timeline.push({ id: 'quote-payment-' + Date.now(), title: 'Payment Awaiting', description: 'Pay the confirmed amount by UPI and submit the UTR for verification.', timestamp: now, status: 'current' });
+  }
+
+  const updatedOrder: CamporaOrder = {
+    ...order,
+    finalPrice: amount,
+    total: amount,
+    discount: 0,
+    couponCode: undefined,
+    discountEligible: !order.isPackage,
+    quoteStatus: 'sent',
+    paymentStatus: 'pending',
+    status: 'approved',
+    requiresReview: false,
+    reviewReason: message || 'Final quote confirmed by CAMPORA.',
+    timeline,
+    updatedAt: now,
+  };
+  ordersStore[orderIndex] = updatedOrder;
+  await persistState();
+  res.json({ success: true, message: 'Quote sent. The customer can now submit UPI payment proof.', order: await withSignedFileLinks(updatedOrder) });
+});
+
 // Admin Payment Verification (Confirm or Reject)
 app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
