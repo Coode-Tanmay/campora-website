@@ -119,6 +119,12 @@ function AppContent() {
   };
 
   const handleOpenOrderModal = (serviceId?: string) => {
+    if (!isCustomer && !isAdmin) {
+      setSelectedServiceForOrder(serviceId);
+      setIsAuthModalOpen(true);
+      showToast('Please sign in before placing an order.');
+      return;
+    }
     setSelectedServiceForOrder(serviceId);
     setIsOrderModalOpen(true);
   };
@@ -139,26 +145,17 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleOrderCreated = async (newOrder: CamporaOrder) => {
-    try {
-      const res = await api.createOrder({
-        ...newOrder,
-        customerId: user?.id,
-        customerEmail: user?.email || `${newOrder.customerName.toLowerCase().replace(/\s+/g, '')}@campora.in`,
-      });
-      setOrders([res.order || newOrder, ...orders]);
-      setSelectedOrderId(newOrder.id);
-    } catch {
-      setOrders([newOrder, ...orders]);
-      setSelectedOrderId(newOrder.id);
-    }
-    
-    if (isCustomer) {
-      setCurrentTab('customer-portal');
-    } else {
-      setCurrentTab('tracking');
-    }
-    showToast(`Order #${newOrder.id} logged successfully! Live tracking active.`);
+  const handleOrderCreated = async (newOrder: CamporaOrder): Promise<CamporaOrder> => {
+    const res = await api.createOrder({
+      ...newOrder,
+      customerId: user?.id,
+      customerEmail: user?.email,
+    });
+    setOrders((previous) => [res.order, ...previous]);
+    setSelectedOrderId(res.order.id);
+    setCurrentTab('customer-portal');
+    showToast(`Order #${res.order.id} successfully saved.`);
+    return res.order;
   };
 
   const handleUpdateOrderStatus = (orderId: string, updates: Partial<CamporaOrder>) => {
