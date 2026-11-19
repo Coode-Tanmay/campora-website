@@ -172,31 +172,65 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     }
   };
 
-  const handleTemplateFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
+  const readFileAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read selected file.'));
+    reader.onerror = () => reject(new Error('Unable to read selected file.'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleTemplateFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      setStepError('Please choose a template file smaller than 3 MB.');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
       setCollegeTemplateFile({
         id: `tmpl-${Date.now()}`,
         name: file.name,
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
         type: file.type || 'application/octet-stream',
-        uploadedAt: 'Just now'
+        uploadedAt: 'Just now',
+        dataUrl,
       });
       setStepError('');
+    } catch (error: any) {
+      setStepError(error.message || 'Unable to read template file.');
     }
   };
 
-  const handleReferenceFilesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const files: File[] = Array.from(e.target.files);
-      const newAtts: OrderAttachment[] = files.map((file, idx) => ({
+  const handleReferenceFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    if (!selected.length) return;
+    if (referenceFiles.length + selected.length > 10) {
+      setStepError('You can attach a maximum of 10 reference files.');
+      e.target.value = '';
+      return;
+    }
+    const existingBytes = referenceFiles.reduce((sum, file) => sum + (file.dataUrl ? Math.floor(file.dataUrl.length * 0.75) : 0), 0);
+    const selectedBytes = selected.reduce((sum, file) => sum + file.size, 0);
+    if (selected.some((file) => file.size > 3 * 1024 * 1024) || existingBytes + selectedBytes > 6 * 1024 * 1024) {
+      setStepError('Each file must be under 3 MB and all reference files together must be under 6 MB.');
+      e.target.value = '';
+      return;
+    }
+    try {
+      const newAtts: OrderAttachment[] = await Promise.all(selected.map(async (file, idx) => ({
         id: `att-${Date.now()}-${idx}`,
         name: file.name,
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        type: file.type || 'document',
-        uploadedAt: 'Just now'
-      }));
-      setReferenceFiles([...referenceFiles, ...newAtts]);
+        size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
+        type: file.type || 'application/octet-stream',
+        uploadedAt: 'Just now',
+        dataUrl: await readFileAsDataUrl(file),
+      })));
+      setReferenceFiles((previous) => [...previous, ...newAtts]);
+      setStepError('');
+    } catch (error: any) {
+      setStepError(error.message || 'Unable to read reference files.');
     }
   };
 
@@ -739,7 +773,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                             {collegeTemplateFile ? 'Replace Template File' : 'Click to upload your College Template'}
                           </span>
                           <span className="text-[11px] text-[#858585] mt-0.5">
-                            PDF, DOCX, PPTX, JPG, PNG (up to 25MB)
+                            PDF, DOCX, PPTX, JPG, PNG (up to 3MB)
                           </span>
                           <input
                             type="file"
