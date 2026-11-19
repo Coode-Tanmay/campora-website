@@ -156,21 +156,21 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   <div className="grid grid-cols-3 gap-2.5 pt-1">
                     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2.5 text-center">
                       <div className="text-[10px] text-[#858585]">Latency</div>
-                      <div className="text-sm font-extrabold text-[#35C759] mt-0.5">-42%</div>
+                      <div className="text-sm font-extrabold text-[#35C759] mt-0.5">Visual</div>
                       <div className="w-full bg-[#2A2A2A] h-1 rounded-full mt-1.5 overflow-hidden">
                         <div className="bg-[#35C759] h-full w-3/4" />
                       </div>
                     </div>
                     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2.5 text-center">
                       <div className="text-[10px] text-[#858585]">Throughput</div>
-                      <div className="text-sm font-extrabold text-[#D4A72C] mt-0.5">3.8x</div>
+                      <div className="text-sm font-extrabold text-[#D4A72C] mt-0.5">Clear</div>
                       <div className="w-full bg-[#2A2A2A] h-1 rounded-full mt-1.5 overflow-hidden">
                         <div className="bg-[#D4A72C] h-full w-4/5" />
                       </div>
                     </div>
                     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2.5 text-center">
                       <div className="text-[10px] text-[#858585]">Accuracy</div>
-                      <div className="text-sm font-extrabold text-[#F0D27A] mt-0.5">99.4%</div>
+                      <div className="text-sm font-extrabold text-[#F0D27A] mt-0.5">Academic</div>
                       <div className="w-full bg-[#2A2A2A] h-1 rounded-full mt-1.5 overflow-hidden">
                         <div className="bg-[#F0D27A] h-full w-11/12" />
                       </div>
@@ -194,7 +194,7 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                     <span className="flex items-center gap-1.5 text-[#B8B8B8]">
                       <Sparkles className="w-3.5 h-3.5 text-[#D4A72C]" /> Crafted by Senior Academic Designer
                     </span>
-                    <span className="font-mono text-[11px] text-[#858585]">A+ Verified</span>
+                    <span className="font-mono text-[11px] text-[#858585]">Sample layout</span>
                   </div>
 
                 </div>
@@ -207,8 +207,8 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   4.9★
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">2,500+ Reviews</div>
-                  <div className="text-[10px] text-[#858585]">Top Rated Student Service</div>
+                  <div className="text-xs font-bold text-white">Illustrative Layout</div>
+                  <div className="text-[10px] text-[#858585]">Sample preview • Not client work</div>
                 </div>
               </div>
 
