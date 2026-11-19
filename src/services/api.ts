@@ -167,7 +167,7 @@ export const api = {
     });
   },
 
-  async uploadDeliverable(orderId: string, deliverable: { title: string; fileType: string; fileSize: string; downloadUrl?: string }): Promise<{ success: boolean; order: CamporaOrder }> {
+  async uploadDeliverable(orderId: string, deliverable: { title: string; fileType: string; fileName: string; fileData: string }): Promise<{ success: boolean; order: CamporaOrder }> {
     return fetchJson<{ success: boolean; order: CamporaOrder }>(`${API_BASE}/admin/orders/${orderId}/deliverables`, {
       method: 'POST',
       body: JSON.stringify(deliverable),
