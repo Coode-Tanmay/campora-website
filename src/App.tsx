@@ -19,7 +19,6 @@ import { CustomerPortal } from './components/CustomerPortal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder } from './types';
-import { INITIAL_ORDERS } from './data/mockData';
 import { api } from './services/api';
 import { CheckCircle2, MessageCircle, Mail, Phone, Clock, MapPin } from 'lucide-react';
 
@@ -29,8 +28,8 @@ function AppContent() {
   const [isOrderModalOpen, setIsOrderModalOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [selectedServiceForOrder, setSelectedServiceForOrder] = useState<string | undefined>(undefined);
-  const [orders, setOrders] = useState<CamporaOrder[]>(INITIAL_ORDERS);
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(INITIAL_ORDERS[0]?.id || 'CMP-1024');
+  const [orders, setOrders] = useState<CamporaOrder[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Handle URL path routing and protect customer/admin pages
