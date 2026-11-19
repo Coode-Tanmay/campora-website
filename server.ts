@@ -715,7 +715,7 @@ app.post('/api/auth/admin/login', rateLimit('admin-login', 5, 15 * 60 * 1000), a
   }
 
   // Server-side validation against protected credentials
-  if (username.trim() === ADMIN_USERNAME && password.trim() === ADMIN_PASSWORD) {
+  if (username.trim() === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
     const adminUser: AuthUser = {
       id: 'admin-tanmay-1',
       name: 'Tanmay (CAMPORA Admin)',
