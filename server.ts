@@ -923,7 +923,7 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
     total,
     quoteStatus: requiresReview ? 'pending' : 'not_required',
     paymentStatus: requiresReview ? 'awaiting_quote' : 'pending',
-    status: 'new_order',
+    status: requiresReview ? 'requirements_review' : 'new_order',
     requiresReview,
     reviewReason: requiresReview ? 'Order requires review before payment.' : undefined,
     progressPercent: 10,
