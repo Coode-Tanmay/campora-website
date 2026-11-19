@@ -213,8 +213,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     }
     const existingBytes = referenceFiles.reduce((sum, file) => sum + (file.dataUrl ? Math.floor(file.dataUrl.length * 0.75) : 0), 0);
     const selectedBytes = selected.reduce((sum, file) => sum + file.size, 0);
-    if (selected.some((file) => file.size > 3 * 1024 * 1024) || existingBytes + selectedBytes > 6 * 1024 * 1024) {
-      setStepError('Each file must be under 3 MB and all reference files together must be under 6 MB.');
+    if (selected.some((file) => file.size > 3 * 1024 * 1024) || existingBytes + selectedBytes > 4 * 1024 * 1024) {
+      setStepError('Each file must be under 3 MB and all reference files together must be under 4 MB.');
       e.target.value = '';
       return;
     }
