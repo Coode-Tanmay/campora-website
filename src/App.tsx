@@ -284,7 +284,7 @@ function AppContent() {
                   <Mail className="w-6 h-6" />
                 </div>
                 <h3 className="font-bold text-white text-base">Official Email</h3>
-                <p className="text-xs text-zinc-400 mt-1">support@campora.in / orders@campora.in</p>
+                <a href="mailto:camporasupport@gmail.com" className="text-xs text-zinc-400 mt-1 inline-block hover:text-[#D4A72C] transition-colors">camporasupport@gmail.com</a>
                 <span className="inline-block mt-3 text-xs text-zinc-500">Response within 30 minutes</span>
               </div>
             </div>

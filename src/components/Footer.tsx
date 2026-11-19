@@ -135,10 +135,10 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab, onOpenOrderModal, o
                 <span>@campora_in</span>
               </a>
 
-              <div className="flex items-center gap-2 text-[#858585]">
-                <Mail className="w-4 h-4 text-[#858585]" />
-                <span>support@campora.in</span>
-              </div>
+              <a href="mailto:camporasupport@gmail.com" className="flex items-center gap-2 text-[#B8B8B8] hover:text-[#D4A72C] transition-colors">
+                <Mail className="w-4 h-4 text-[#D4A72C]" />
+                <span>camporasupport@gmail.com</span>
+              </a>
             </div>
           </div>
 
