@@ -191,7 +191,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
             <button
               id="btn-oauth-microsoft"
               type="button"
-              disabled={isLoading || oauthLoading !== null}
+              disabled={oauthLoading !== null}
               onClick={() => handleOfficialOAuth('microsoft')}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl bg-[#1A1A1D] hover:bg-[#242429] border border-zinc-700/70 hover:border-zinc-500 text-zinc-100 font-medium text-xs sm:text-sm transition-all shadow-md group disabled:opacity-50"
             >
