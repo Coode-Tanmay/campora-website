@@ -52,8 +52,8 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
         return;
       }
 
-      if (file.size > 10 * 1024 * 1024) {
-        setErrorMsg('File size exceeds 10MB limit. Please upload a smaller screenshot.');
+      if (file.size > 500 * 1024) {
+        setErrorMsg('File size exceeds 500 KB. Please upload a smaller PNG or JPG screenshot.');
         return;
       }
 
