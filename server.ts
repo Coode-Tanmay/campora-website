@@ -139,16 +139,41 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-function getRequestOrigin(req: Request): string {
-  if (req.query.origin && typeof req.query.origin === 'string' && (req.query.origin.startsWith('http://') || req.query.origin.startsWith('https://'))) {
-    return req.query.origin.replace(/\/$/, '');
+function getRequestOrigin(_req: Request): string {
+  const configuredUrl = process.env.APP_URL?.trim();
+  if (configuredUrl && configuredUrl !== 'MY_APP_URL') {
+    const parsed = new URL(configuredUrl);
+    if (parsed.protocol !== 'https:' && process.env.NODE_ENV === 'production') {
+      throw new Error('APP_URL must use HTTPS in production.');
+    }
+    return parsed.origin;
   }
-  if (process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL' && process.env.APP_URL.trim() !== '') {
-    return process.env.APP_URL.replace(/\/$/, '');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('APP_URL must be configured to the canonical public CAMPORA website origin.');
   }
-  const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
-  const proto = (req.headers['x-forwarded-proto'] as string) || (req.secure ? 'https' : 'http');
-  return `${proto}://${host}`;
+  return 'http://localhost:3000';
+}
+
+function createOAuthState(provider: 'google' | 'microsoft', origin: string): string {
+  return jwt.sign(
+    { provider, origin },
+    JWT_SECRET,
+    { expiresIn: '10m', issuer: 'campora', audience: 'campora-oauth' },
+  );
+}
+
+function verifyOAuthState(state: unknown, provider: 'google' | 'microsoft', expectedOrigin: string): string {
+  if (typeof state !== 'string' || !state) {
+    throw new Error('OAuth state is missing. Please restart sign-in.');
+  }
+  const payload = jwt.verify(state, JWT_SECRET, {
+    issuer: 'campora',
+    audience: 'campora-oauth',
+  }) as jwt.JwtPayload & { provider?: string; origin?: string };
+  if (payload.provider !== provider || payload.origin !== expectedOrigin) {
+    throw new Error('OAuth state validation failed. Please restart sign-in.');
+  }
+  return payload.origin;
 }
 
 // Check OAuth Configuration Status
@@ -197,7 +222,7 @@ app.get('/api/auth/google/url', (req: Request, res: Response) => {
     return;
   }
 
-  const statePayload = Buffer.from(JSON.stringify({ origin, provider: 'google', t: Date.now() })).toString('base64url');
+  const statePayload = createOAuthState('google', origin);
 
   const params = new URLSearchParams({
     client_id: googleClientId,
@@ -243,7 +268,7 @@ app.get('/api/auth/microsoft/url', (req: Request, res: Response) => {
     return;
   }
 
-  const statePayload = Buffer.from(JSON.stringify({ origin, provider: 'microsoft', t: Date.now() })).toString('base64url');
+  const statePayload = createOAuthState('microsoft', origin);
 
   const params = new URLSearchParams({
     client_id: msClientId,
@@ -319,17 +344,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
   }
 
   try {
-    let stateOrigin: string | null = null;
-    if (req.query.state && typeof req.query.state === 'string') {
-      try {
-        const parsed = JSON.parse(Buffer.from(req.query.state, 'base64url').toString('utf8'));
-        if (parsed.origin) stateOrigin = parsed.origin;
-      } catch {
-        // ignore parse error
-      }
-    }
-
-    const origin = stateOrigin || getRequestOrigin(req);
+    const origin = verifyOAuthState(req.query.state, 'google', getRequestOrigin(req));
     const redirectUri = `${origin}/auth/callback/google`;
 
     // 1. Exchange authorization code for Google access token
@@ -496,17 +511,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
   }
 
   try {
-    let stateOrigin: string | null = null;
-    if (req.query.state && typeof req.query.state === 'string') {
-      try {
-        const parsed = JSON.parse(Buffer.from(req.query.state, 'base64url').toString('utf8'));
-        if (parsed.origin) stateOrigin = parsed.origin;
-      } catch {
-        // ignore
-      }
-    }
-
-    const origin = stateOrigin || getRequestOrigin(req);
+    const origin = verifyOAuthState(req.query.state, 'microsoft', getRequestOrigin(req));
     const redirectUri = `${origin}/auth/callback/microsoft`;
 
     const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -654,7 +659,6 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
       success: true,
       message: 'Admin authentication successful.',
       user: adminUser,
-      token,
     });
     return;
   }
@@ -732,7 +736,6 @@ app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
   res.json({
     success: true,
     user: customerPayload,
-    token,
   });
 });
 
