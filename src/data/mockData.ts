@@ -561,7 +561,7 @@ export const FAQ_DATA: FAQItem[] = [
   {
     category: 'College Templates',
     question: 'Can you follow my university’s official formatting template?',
-    answer: 'Yes, absolutely! College Template Support is a core CAMPORA feature. Simply upload your university or department template (PDF, DOCX, PPTX, etc.) during checkout, and our designers will strictly follow your prescribed fonts, logos, slide masters, and cover page rules.'
+    answer: 'Yes. If the selected service supports templates, upload your university or department format during checkout and include any specific instructions. We will use it as the formatting reference for the work.'
   },
   {
     category: 'Pricing & Limits',
@@ -570,22 +570,22 @@ export const FAQ_DATA: FAQItem[] = [
   },
   {
     category: 'Quality & Authenticity',
-    question: 'Is the work 100% original and plagiarism-free?',
-    answer: 'Yes, completely. Every document, presentation, and report is crafted from scratch according to your specific topic, syllabus, and guidelines. We verify formatting and originality before delivery.'
+    question: 'How do you handle originality and citations?',
+    answer: 'We prepare work from the brief and source material agreed for your order, and can format citations where requested. We do not promise a specific similarity score or provide a Turnitin report unless that is explicitly part of an agreed service. Students should review the work and follow their institution’s academic integrity rules.'
   },
   {
     category: 'Support & Revisions',
     question: 'What if my professor asks for changes or feedback?',
-    answer: 'All our orders include free revisions! If your professor suggests modifications or adjustments, message our 6 AM – 12 AM WhatsApp desk (+91 75592 25529) and we will update your files promptly.'
+    answer: 'Revision availability depends on the selected service and the scope confirmed before work begins. If a revision is included, contact us during support hours with the requested changes and your order ID.'
   },
   {
     category: 'Payment & Privacy',
     question: 'Is my personal information and college details safe?',
-    answer: '100% confidential. We operate under strict privacy protocols. Student files, identity, and university details are handled privately and never shared or published.'
+    answer: 'Order files are stored in a private bucket and access is restricted to the customer account and authorized CAMPORA administrators. We use submitted details to process and support the order, and do not publish customer files.'
   },
   {
     category: 'Internship Support',
-    question: 'What is included in the ₹499 Internship Completion + Certification + Report package?',
+    question: 'What is included in the ₹499 Complete Internship Package?',
     answer: 'The package covers internship documentation support using the student's genuine internship or project details: report formatting, a presentation deck, activity-log templates and viva preparation. CAMPORA does not issue third-party internship certificates.'
   }
 ];
