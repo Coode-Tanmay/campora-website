@@ -945,11 +945,11 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
   res.status(201).json({ success: true, order: newOrder });
 });
 
-// Customer submits UPI payment proof (UTR and screenshot)
+// Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
 app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
-  const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body;
+  const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body || {};
 
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
   if (orderIndex === -1) {
@@ -958,30 +958,45 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   }
 
   const order = ordersStore[orderIndex];
-
-  // Ownership check
-  if (user.role !== 'admin' && order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase()) {
-    res.status(403).json({ error: 'Access Denied: You cannot submit payment for another customer order.' });
+  if (user.role !== 'customer' || (order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase())) {
+    res.status(403).json({ error: 'You cannot submit payment for this order.' });
     return;
   }
 
-  if (!utrNumber || !utrNumber.trim()) {
-    res.status(400).json({ error: 'Please provide a valid UPI Reference / UTR Number.' });
+  if (order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review' || order.status === 'cancelled' || order.status === 'rejected' || order.status === 'completed') {
+    res.status(409).json({ error: 'This order is not ready to accept payment. Wait for the CAMPORA team to confirm the quote or order status.' });
+    return;
+  }
+  if (!['pending', 'rejected'].includes(order.paymentStatus)) {
+    res.status(409).json({ error: 'Payment proof has already been submitted or the payment is confirmed.' });
     return;
   }
 
-  const payableAmount = order.finalPrice || order.total;
+  const cleanUtr = typeof utrNumber === 'string' ? utrNumber.trim().replace(/\s+/g, '') : '';
+  if (!/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) {
+    res.status(400).json({ error: 'Please provide a valid UPI reference / UTR number.' });
+    return;
+  }
 
-  // IMPORTANT: Uploading a payment screenshot must NOT automatically mark the order as paid.
-  // It transitions to 'verification_pending' until Admin verifies.
+  let safeScreenshotUrl: string | undefined;
+  if (typeof screenshotUrl === 'string' && screenshotUrl.trim()) {
+    if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(screenshotUrl) || screenshotUrl.length > 700000) {
+      res.status(400).json({ error: 'Payment screenshot must be a PNG or JPG image under 500 KB.' });
+      return;
+    }
+    safeScreenshotUrl = screenshotUrl;
+  }
+
+  const payableAmount = order.finalPrice ?? order.total;
+  const now = new Date().toISOString();
   const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
     if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
       return {
         ...step,
         title: 'Payment Verification Pending',
-        description: `Student submitted UTR: ${utrNumber.trim()}. CAMPORA Admin is verifying with SBI statement.`,
+        description: 'Payment reference submitted. CAMPORA is checking the transaction.',
         status: 'current' as const,
-        timestamp: 'Just now',
+        timestamp: now,
       };
     }
     return step;
@@ -993,22 +1008,22 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     status: 'verification_pending',
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
-      utrNumber: utrNumber.trim(),
-      screenshotUrl: screenshotUrl || undefined,
-      screenshotName: screenshotName || 'Payment_Proof.png',
-      screenshotSize: screenshotSize || '320 KB',
-      submittedAt: 'Today, Just now',
+      utrNumber: cleanUtr,
+      screenshotUrl: safeScreenshotUrl,
+      screenshotName: safeScreenshotUrl ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
+      screenshotSize: safeScreenshotUrl && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
+      submittedAt: now,
       amountPaid: payableAmount,
     },
     timeline: updatedTimeline,
-    updatedAt: 'Just now',
+    updatedAt: now,
   };
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
 
   const { adminNotes, ...customerSafeOrder } = updatedOrder;
-  res.json({ success: true, message: 'Payment proof submitted. Admin will verify shortly.', order: customerSafeOrder });
+  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
 });
 
 // Customer profile & stats
