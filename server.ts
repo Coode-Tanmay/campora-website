@@ -167,21 +167,26 @@ function getRequestOrigin(_req: Request): string {
 
 function createOAuthState(provider: 'google' | 'microsoft', origin: string): string {
   return jwt.sign(
-    { provider, origin },
+    { provider, origin, nonce: require('crypto').randomBytes(32).toString('hex') },
     JWT_SECRET,
     { expiresIn: '10m', issuer: 'campora', audience: 'campora-oauth' },
   );
 }
 
-function verifyOAuthState(state: unknown, provider: 'google' | 'microsoft', expectedOrigin: string): string {
-  if (typeof state !== 'string' || !state) {
-    throw new Error('OAuth state is missing. Please restart sign-in.');
+function verifyOAuthState(
+  state: unknown,
+  cookieState: unknown,
+  provider: 'google' | 'microsoft',
+  expectedOrigin: string,
+): string {
+  if (typeof state !== 'string' || !state || typeof cookieState !== 'string' || !cookieState || state !== cookieState) {
+    throw new Error('OAuth state validation failed. Please restart sign-in.');
   }
   const payload = jwt.verify(state, JWT_SECRET, {
     issuer: 'campora',
     audience: 'campora-oauth',
-  }) as jwt.JwtPayload & { provider?: string; origin?: string };
-  if (payload.provider !== provider || payload.origin !== expectedOrigin) {
+  }) as jwt.JwtPayload & { provider?: string; origin?: string; nonce?: string };
+  if (payload.provider !== provider || payload.origin !== expectedOrigin || !payload.nonce) {
     throw new Error('OAuth state validation failed. Please restart sign-in.');
   }
   return payload.origin;
@@ -234,6 +239,7 @@ app.get('/api/auth/google/url', (req: Request, res: Response) => {
   }
 
   const statePayload = createOAuthState('google', origin);
+  res.cookie('campora_google_oauth_state', statePayload, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 10 * 60 * 1000 });
 
   const params = new URLSearchParams({
     client_id: googleClientId,
@@ -280,6 +286,7 @@ app.get('/api/auth/microsoft/url', (req: Request, res: Response) => {
   }
 
   const statePayload = createOAuthState('microsoft', origin);
+  res.cookie('campora_microsoft_oauth_state', statePayload, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 10 * 60 * 1000 });
 
   const params = new URLSearchParams({
     client_id: msClientId,
@@ -355,7 +362,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
   }
 
   try {
-    const origin = verifyOAuthState(req.query.state, 'google', getRequestOrigin(req));
+    const origin = verifyOAuthState(req.query.state, req.cookies?.campora_google_oauth_state, 'google', getRequestOrigin(req));
     const redirectUri = `${origin}/auth/callback/google`;
 
     // 1. Exchange authorization code for Google access token
@@ -522,7 +529,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
   }
 
   try {
-    const origin = verifyOAuthState(req.query.state, 'microsoft', getRequestOrigin(req));
+    const origin = verifyOAuthState(req.query.state, req.cookies?.campora_microsoft_oauth_state, 'microsoft', getRequestOrigin(req));
     const redirectUri = `${origin}/auth/callback/microsoft`;
 
     const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
@@ -591,7 +598,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
     res.cookie('campora_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -662,7 +669,7 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
     res.cookie('campora_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -740,7 +747,7 @@ app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
   res.cookie('campora_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
@@ -761,7 +768,7 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
   res.clearCookie('campora_session', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    sameSite: 'lax',
   });
   res.json({ success: true, message: 'Logged out successfully.' });
 });
