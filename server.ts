@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import { randomBytes } from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
@@ -167,7 +168,7 @@ function getRequestOrigin(_req: Request): string {
 
 function createOAuthState(provider: 'google' | 'microsoft', origin: string): string {
   return jwt.sign(
-    { provider, origin, nonce: require('crypto').randomBytes(32).toString('hex') },
+    { provider, origin, nonce: randomBytes(32).toString('hex') },
     JWT_SECRET,
     { expiresIn: '10m', issuer: 'campora', audience: 'campora-oauth' },
   );
