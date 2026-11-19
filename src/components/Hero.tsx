@@ -155,21 +155,21 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   {/* Visual charts simulation */}
                   <div className="grid grid-cols-3 gap-2.5 pt-1">
                     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2.5 text-center">
-                      <div className="text-[10px] text-[#858585]">Latency</div>
+                      <div className="text-[10px] text-[#858585]">Structure</div>
                       <div className="text-sm font-extrabold text-[#35C759] mt-0.5">Visual</div>
                       <div className="w-full bg-[#2A2A2A] h-1 rounded-full mt-1.5 overflow-hidden">
                         <div className="bg-[#35C759] h-full w-3/4" />
                       </div>
                     </div>
                     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2.5 text-center">
-                      <div className="text-[10px] text-[#858585]">Throughput</div>
+                      <div className="text-[10px] text-[#858585]">Readability</div>
                       <div className="text-sm font-extrabold text-[#D4A72C] mt-0.5">Clear</div>
                       <div className="w-full bg-[#2A2A2A] h-1 rounded-full mt-1.5 overflow-hidden">
                         <div className="bg-[#D4A72C] h-full w-4/5" />
                       </div>
                     </div>
                     <div className="bg-[#111111] border border-[#2A2A2A] rounded-lg p-2.5 text-center">
-                      <div className="text-[10px] text-[#858585]">Accuracy</div>
+                      <div className="text-[10px] text-[#858585]">Formatting</div>
                       <div className="text-sm font-extrabold text-[#F0D27A] mt-0.5">Academic</div>
                       <div className="w-full bg-[#2A2A2A] h-1 rounded-full mt-1.5 overflow-hidden">
                         <div className="bg-[#F0D27A] h-full w-11/12" />
@@ -181,11 +181,11 @@ export const Hero: React.FC<HeroProps> = ({ onExploreServices, onOrderNow }) => 
                   <div className="bg-[#111111] rounded-xl p-3 border border-[#2A2A2A] space-y-2 text-xs text-[#B8B8B8]">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#D4A72C]" />
-                      <span>Custom corporate visual layout with vector diagrams</span>
+                      <span>Clear hierarchy and consistent visual language</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#D4A72C]" />
-                      <span>IEEE research references & formatted notes</span>
+                      <span>Readable charts, diagrams and academic structure</span>
                     </div>
                   </div>
 
