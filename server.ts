@@ -13,6 +13,8 @@ import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, Ti
 dotenv.config();
 
 const app = express();
+// Render sits behind a trusted reverse proxy; use the forwarded client address for throttling.
+app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 3000;
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -52,6 +54,39 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
+
+// Lightweight per-process throttling for sensitive endpoints. The API is currently a
+// single Render service; move this store to Redis/Postgres before adding multiple instances.
+type RateLimitEntry = { count: number; resetAt: number };
+const rateLimitEntries = new Map<string, RateLimitEntry>();
+const rateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitEntries) {
+    if (entry.resetAt <= now) rateLimitEntries.delete(key);
+  }
+}, 60_000);
+rateLimitCleanup.unref();
+
+function rateLimit(scope: string, maxRequests: number, windowMs: number) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const key = scope + ':' + clientIp;
+    const now = Date.now();
+    const current = rateLimitEntries.get(key);
+    if (!current || current.resetAt <= now) {
+      rateLimitEntries.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    current.count += 1;
+    if (current.count > maxRequests) {
+      res.setHeader('Retry-After', String(Math.ceil((current.resetAt - now) / 1000)));
+      res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
+      return;
+    }
+    next();
+  };
+}
 
 // Reject cross-origin browser mutations. The frontend and API share the canonical APP_URL
 // through the Vercel rewrite, so state-changing requests must originate from that origin.
@@ -239,7 +274,7 @@ app.get('/api/auth/me', (req: RequestWithUser, res: Response) => {
 });
 
 // Generate Official Google OAuth 2.0 Authorization URL
-app.get('/api/auth/google/url', (req: Request, res: Response) => {
+app.get('/api/auth/google/url', rateLimit('google-oauth-start', 20, 15 * 60 * 1000), (req: Request, res: Response) => {
   const origin = getRequestOrigin(req);
   const redirectUri = `${origin}/auth/callback/google`;
   const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
@@ -286,7 +321,7 @@ app.get('/api/auth/google/url', (req: Request, res: Response) => {
 });
 
 // Generate Official Microsoft OAuth 2.0 Authorization URL
-app.get('/api/auth/microsoft/url', (req: Request, res: Response) => {
+app.get('/api/auth/microsoft/url', rateLimit('microsoft-oauth-start', 20, 15 * 60 * 1000), (req: Request, res: Response) => {
   const origin = getRequestOrigin(req);
   const redirectUri = `${origin}/auth/callback/microsoft`;
   const msClientId = process.env.MICROSOFT_CLIENT_ID?.trim();
@@ -413,7 +448,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
     });
 
     const profile = await profileResponse.json();
-    if (!profile.email) {
+    if (!profile.email || profile.email_verified !== true) {
       throw new Error('Google account did not return a verified email address.');
     }
 
@@ -671,7 +706,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 });
 
 // Admin Login (Strictly separate from Customer Google Auth)
-app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
+app.post('/api/auth/admin/login', rateLimit('admin-login', 5, 15 * 60 * 1000), async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -710,7 +745,7 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
 });
 
 // Customer Email/Password Login & Register
-app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
+app.post('/api/auth/customer/login', rateLimit('customer-login', 10, 15 * 60 * 1000), async (req: Request, res: Response) => {
   const { email, password, name, whatsapp, college } = req.body;
 
   if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
@@ -808,7 +843,7 @@ app.get('/api/customer/orders', requireAuth, (req: RequestWithUser, res: Respons
   
   // Filter exclusively for this customer
   const userOrders = ordersStore
-    .filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase())
+    .filter((o) => o.customerId === user.id)
     .map((o) => {
       // Strip private admin notes before returning to customer
       const { adminNotes, ...customerSafeOrder } = o;
@@ -831,7 +866,7 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
   }
 
   // Strict ownership check: Only owner customer or admin can access
-  if (user.role !== 'admin' && order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase()) {
+  if (user.role !== 'admin' && order.customerId !== user.id) {
     res.status(403).json({ error: 'Access Denied: You do not have permission to view this order.' });
     return;
   }
@@ -946,7 +981,7 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
 });
 
 // Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
-app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders/:id/payment', rateLimit('payment-proof', 8, 15 * 60 * 1000), requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
   const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body || {};
@@ -958,7 +993,7 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   }
 
   const order = ordersStore[orderIndex];
-  if (user.role !== 'customer' || (order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase())) {
+  if (user.role !== 'customer' || order.customerId !== user.id) {
     res.status(403).json({ error: 'You cannot submit payment for this order.' });
     return;
   }
@@ -975,6 +1010,12 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   const cleanUtr = typeof utrNumber === 'string' ? utrNumber.trim().replace(/\s+/g, '') : '';
   if (!/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) {
     res.status(400).json({ error: 'Please provide a valid UPI reference / UTR number.' });
+    return;
+  }
+
+  const duplicateUtr = ordersStore.some((candidate) => candidate.id !== order.id && candidate.paymentDetails?.utrNumber?.toLowerCase() === cleanUtr.toLowerCase());
+  if (duplicateUtr) {
+    res.status(409).json({ error: 'This UPI reference number has already been submitted for another order.' });
     return;
   }
 
@@ -1029,7 +1070,11 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
 // Customer profile & stats
 app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Response) => {
   const user = req.user!;
-  const userOrders = ordersStore.filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase());
+  if (user.role !== 'customer') {
+    res.status(403).json({ error: 'Customer profile access is required.' });
+    return;
+  }
+  const userOrders = ordersStore.filter((o) => o.customerId === user.id);
   
   const totalSpent = userOrders.filter((o) => o.paymentStatus === 'paid').reduce((sum, o) => sum + (o.finalPrice || o.total), 0);
   const activeOrders = userOrders.filter((o) => o.status !== 'completed' && o.status !== 'cancelled');
@@ -1135,7 +1180,16 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
   }
 
   const order = ordersStore[orderIndex];
-  const now = 'Just now';
+  const allowedStatuses: OrderStatus[] = ['new_order', 'under_review', 'approved', 'payment_pending', 'verification_pending', 'payment_confirmed', 'in_progress', 'review', 'completed', 'cancelled', 'rejected', 'requirements_review', 'quote_sent'];
+  if (!allowedStatuses.includes(status)) {
+    res.status(400).json({ error: 'Invalid order status.' });
+    return;
+  }
+  if (['in_progress', 'review', 'completed'].includes(status) && order.paymentStatus !== 'paid') {
+    res.status(409).json({ error: 'Work cannot move forward until payment has been verified.' });
+    return;
+  }
+  const now = new Date().toISOString();
 
   let updatedTimeline = [...order.timeline];
 
@@ -1307,6 +1361,14 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
   }
 
   const order = ordersStore[orderIndex];
+  if (order.paymentStatus !== 'paid') {
+    res.status(409).json({ error: 'A deliverable cannot be marked complete until payment is verified.' });
+    return;
+  }
+  if (typeof downloadUrl !== 'string' || !/^https:\/\//i.test(downloadUrl) || downloadUrl === '#') {
+    res.status(400).json({ error: 'A real HTTPS file URL is required. Placeholder links cannot be published as completed work.' });
+    return;
+  }
 
   const newDeliverable: DeliverableFile = {
     id: `del-${Date.now()}`,
