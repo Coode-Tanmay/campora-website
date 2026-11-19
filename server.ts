@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-import { INITIAL_ORDERS, SERVICES_DATA } from './src/data/mockData';
+import { SERVICES_DATA } from './src/data/mockData';
 import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from './src/types';
 
 dotenv.config();
@@ -219,8 +219,8 @@ async function loadPersistentState(): Promise<void> {
     ordersStore = Array.isArray(data.orders) ? data.orders as CamporaOrder[] : [];
     usersStore = Array.isArray(data.users) ? data.users as StoredUser[] : [];
   } else {
-    // Start with no fake customers or sample orders in production.
-    ordersStore = process.env.NODE_ENV === 'production' ? [] : JSON.parse(JSON.stringify(INITIAL_ORDERS));
+    // Start with an empty account; never seed fake customer/order records.
+    ordersStore = [];
     usersStore = [];
   }
   await persistState();
