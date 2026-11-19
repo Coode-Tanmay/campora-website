@@ -152,3 +152,18 @@
 ::-webkit-scrollbar-track { background: #0B0B0B; }
 ::-webkit-scrollbar-thumb { background: #3A3935; border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: #5A5547; }
+
+
+/* Editorial finish across the public-facing sections */
+main section .rounded-2xl,
+main section .rounded-3xl {
+  border-radius: 5px !important;
+  box-shadow: none !important;
+}
+main section .rounded-full {
+  border-radius: 3px !important;
+}
+main section [class*="shadow-"] { box-shadow: none !important; }
+main section [class*="backdrop-blur"] { backdrop-filter: none; }
+main section h2, main section h3 { letter-spacing: -.035em; }
+main section [class*="hover:-translate-y"] { transform: none; }
