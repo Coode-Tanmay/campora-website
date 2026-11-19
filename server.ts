@@ -1616,7 +1616,7 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
     }
 
     if (ord.deliverables?.length) {
-      ord.deliverables.forEach((del) => {
+      for (const del of ord.deliverables) {
         files.push({
           id: del.id,
           orderId: ord.id,
@@ -1628,7 +1628,7 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
           uploadedAt: del.uploadedAt,
           downloadUrl: del.storagePath ? await createPrivateSignedUrl(del.storagePath) : del.downloadUrl,
         });
-      });
+      }
     }
   }
 
