@@ -341,11 +341,6 @@ function AppContent() {
       <CustomerAuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onNavigateToAdmin={() => {
-          setIsAuthModalOpen(false);
-          setCurrentTab('admin');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
         onSuccess={() => {
           setCurrentTab('customer-portal');
           loadOrders();
