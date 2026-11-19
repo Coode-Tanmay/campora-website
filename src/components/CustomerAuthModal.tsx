@@ -7,7 +7,6 @@ interface CustomerAuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  onNavigateToAdmin?: () => void;
   defaultMode?: 'login' | 'register';
 }
 
@@ -15,7 +14,6 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  onNavigateToAdmin,
   defaultMode = 'login',
 }) => {
   const { loginCustomer, setUserDirectly, refreshSession } = useAuth();
@@ -380,23 +378,6 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
             )}
           </div>
 
-          {/* Admin Navigation Section */}
-          <div className="mt-6 pt-4 border-t border-zinc-800/80 flex items-center justify-between text-xs text-zinc-500">
-            <span>Admin?</span>
-            <button
-              id="btn-go-to-admin-login"
-              type="button"
-              onClick={() => {
-                if (onNavigateToAdmin) {
-                  onNavigateToAdmin();
-                }
-                onClose();
-              }}
-              className="text-zinc-300 hover:text-[#D4A72C] font-semibold px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-[#D4A72C]/40 transition-colors"
-            >
-              Admin Login &rarr;
-            </button>
-          </div>
         </div>
       </div>
 
