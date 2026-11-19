@@ -193,7 +193,7 @@ export const SERVICES_DATA: ServiceItem[] = [
   // Internship Support
   {
     id: 'internship-package',
-    title: 'Internship Completion + Certification + Report',
+    title: 'Complete Internship Package',
     category: 'internship',
     price: 499,
     currency: '₹',
