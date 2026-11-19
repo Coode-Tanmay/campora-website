@@ -580,7 +580,7 @@ export const FAQ_DATA: FAQItem[] = [
   {
     category: 'Internship Support',
     question: 'What is included in the ₹499 Complete Internship Package?',
-    answer: 'The package covers internship documentation support using the student's genuine internship or project details: report formatting, a presentation deck, activity-log templates and viva preparation. CAMPORA does not issue third-party internship certificates.'
+    answer: 'The package covers internship documentation support using the student’s genuine internship or project details: report formatting, a presentation deck, activity-log templates and viva preparation. CAMPORA does not issue third-party internship certificates.'
   }
 ];
 
