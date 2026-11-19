@@ -30,7 +30,7 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOrderSimil
             Proven Academic Excellence.
           </h2>
           <p className="text-[#B8B8B8] text-sm sm:text-base mt-3">
-            Explore anonymized deliverables crafted for students across top universities.
+            Browse illustrative examples of the formats and design styles CAMPORA can create. These are sample concepts, not customer submissions.
           </p>
 
           {/* Filter Tabs */}
@@ -74,7 +74,7 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOrderSimil
                 </div>
 
                 <div className="absolute top-3 right-3 bg-[#35C759] text-[#0B0B0B] font-black text-[10px] px-2 py-0.5 rounded-full">
-                  {item.grade}
+                  Sample concept
                 </div>
 
                 <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-transparent to-transparent opacity-80" />
@@ -130,7 +130,7 @@ export const PortfolioSection: React.FC<PortfolioSectionProps> = ({ onOrderSimil
               </button>
               <div className="absolute bottom-4 left-4 flex gap-2">
                 <span className="px-3 py-1 rounded-full bg-[#D4A72C] text-[#0B0B0B] font-bold text-xs">
-                  {selectedItem.grade}
+                  Sample concept
                 </span>
                 <span className="px-3 py-1 rounded-full bg-[#171717]/90 text-white font-medium text-xs border border-[#2A2A2A]">
                   {selectedItem.pages}
