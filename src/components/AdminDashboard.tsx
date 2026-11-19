@@ -72,7 +72,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   // Deliverable upload
   const [newDeliverableTitle, setNewDeliverableTitle] = useState('');
   const [newDeliverableType, setNewDeliverableType] = useState('PDF');
-  const [newDeliverableSize, setNewDeliverableSize] = useState('2.5 MB');
+  const [newDeliverableFile, setNewDeliverableFile] = useState<File | null>(null);
 
   // Admin notes
   const [adminNoteInput, setAdminNoteInput] = useState('');
@@ -221,20 +221,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
   const handleUploadDeliverable = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeOrder || !newDeliverableTitle.trim()) {
-      triggerToast('Please provide deliverable title.');
+    if (!activeOrder || !newDeliverableFile) {
+      triggerToast('Please choose the actual completed file to upload.');
+      return;
+    }
+    if (newDeliverableFile.size > 5 * 1024 * 1024) {
+      triggerToast('Completed files must be 5 MB or smaller.');
       return;
     }
     try {
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read selected file.'));
+        reader.onerror = () => reject(new Error('Unable to read selected file.'));
+        reader.readAsDataURL(newDeliverableFile);
+      });
       const res = await api.uploadDeliverable(activeOrder.id, {
-        title: newDeliverableTitle.trim(),
+        title: newDeliverableTitle.trim() || newDeliverableFile.name,
         fileType: newDeliverableType,
-        fileSize: newDeliverableSize,
-        downloadUrl: '#',
+        fileName: newDeliverableFile.name,
+        fileData,
       });
       setOrders((prev) => prev.map((o) => (o.id === activeOrder.id ? res.order : o)));
       setNewDeliverableTitle('');
-      triggerToast('Completed deliverable uploaded and order marked Completed!');
+      setNewDeliverableFile(null);
+      triggerToast('Completed file uploaded securely and order marked completed.');
     } catch (err: any) {
       triggerToast(err.message || 'Failed to upload deliverable.');
     }
@@ -767,9 +778,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         </div>
                       </div>
 
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.ppt,.pptx,.xlsx,.zip,.png,.jpg,.jpeg"
+                        onChange={(e) => setNewDeliverableFile(e.target.files?.[0] || null)}
+                        className="w-full text-xs text-zinc-300 file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-zinc-100 hover:file:bg-zinc-700"
+                      />
+                      {newDeliverableFile && (
+                        <p className="text-[11px] text-zinc-400">Selected: {newDeliverableFile.name} ({(newDeliverableFile.size / (1024 * 1024)).toFixed(2)} MB)</p>
+                      )}
+
                       <button
                         type="submit"
-                        className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                        disabled={!newDeliverableFile || activeOrder.paymentStatus !== 'paid'}
+                        className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <FileCheck className="w-3.5 h-3.5" /> Upload & Mark Order Completed
                       </button>
