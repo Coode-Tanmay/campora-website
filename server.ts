@@ -194,34 +194,80 @@ let usersStore: StoredUser[] = [];
 let stateWriteQueue: Promise<unknown> = Promise.resolve();
 
 async function loadPersistentState(): Promise<void> {
+  const [ordersResult, customersResult] = await Promise.all([
+    supabase.from('campora_orders').select('payload').order('created_at', { ascending: false }),
+    supabase.from('campora_customers').select('payload').order('created_at', { ascending: true }),
+  ]);
+  if (ordersResult.error) throw new Error(`Unable to load CAMPORA orders: ${ordersResult.error.message}`);
+  if (customersResult.error) throw new Error(`Unable to load CAMPORA customers: ${customersResult.error.message}`);
+
+  if ((ordersResult.data?.length || 0) > 0 || (customersResult.data?.length || 0) > 0) {
+    ordersStore = (ordersResult.data || []).map((row: any) => row.payload as CamporaOrder);
+    usersStore = (customersResult.data || []).map((row: any) => row.payload as StoredUser);
+    return;
+  }
+
+  // One-time compatibility fallback: migrate any existing JSONB state into the
+  // indexed tables before serving requests. Keep the old row as a rollback mirror.
   const { data, error } = await supabase
     .from('campora_app_state')
     .select('orders, users')
     .eq('id', 'primary')
     .maybeSingle();
-  if (error) throw new Error(`Unable to load CAMPORA data from Supabase: ${error.message}`);
+  if (error) throw new Error(`Unable to load legacy CAMPORA state: ${error.message}`);
   if (data) {
     ordersStore = Array.isArray(data.orders) ? data.orders as CamporaOrder[] : [];
     usersStore = Array.isArray(data.users) ? data.users as StoredUser[] : [];
-    return;
+  } else {
+    // Start with no fake customers or sample orders in production.
+    ordersStore = process.env.NODE_ENV === 'production' ? [] : JSON.parse(JSON.stringify(INITIAL_ORDERS));
+    usersStore = [];
   }
-  // Start with no fake customers or sample orders in production.
-  ordersStore = process.env.NODE_ENV === 'production' ? [] : JSON.parse(JSON.stringify(INITIAL_ORDERS));
-  usersStore = [];
   await persistState();
 }
 
 async function persistState(): Promise<void> {
+  const now = new Date().toISOString();
   const snapshot = {
     id: 'primary',
     orders: ordersStore,
     users: usersStore,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   };
-  // Serialize writes so concurrent requests cannot complete out of order.
-  stateWriteQueue = stateWriteQueue.then(async () => {
+  const customerRows = usersStore.map((user) => ({
+    id: user.id,
+    email: user.email.toLowerCase(),
+    full_name: user.name || '',
+    role: user.role || 'customer',
+    payload: user,
+    updated_at: now,
+  }));
+  const orderRows = ordersStore.map((order) => ({
+    id: order.id,
+    customer_id: order.customerId,
+    order_number: order.id,
+    service_id: order.serviceId || null,
+    service_name: order.serviceName || '',
+    status: order.status || 'new_order',
+    payment_status: order.paymentStatus || 'pending',
+    final_amount: Number.isFinite(Number(order.finalPrice ?? order.total)) ? Number(order.finalPrice ?? order.total) : 0,
+    payload: order,
+    updated_at: now,
+  }));
+
+  // Serialize writes; the indexed tables are the source of truth and the JSONB row
+  // remains a compatibility backup until the relational migration is fully proven.
+  stateWriteQueue = stateWriteQueue.catch(() => undefined).then(async () => {
+    if (customerRows.length) {
+      const { error } = await supabase.from('campora_customers').upsert(customerRows, { onConflict: 'id' });
+      if (error) throw new Error(`Unable to save CAMPORA customers: ${error.message}`);
+    }
+    if (orderRows.length) {
+      const { error } = await supabase.from('campora_orders').upsert(orderRows, { onConflict: 'id' });
+      if (error) throw new Error(`Unable to save CAMPORA orders: ${error.message}`);
+    }
     const { error } = await supabase.from('campora_app_state').upsert(snapshot, { onConflict: 'id' });
-    if (error) throw new Error(`Unable to save CAMPORA data to Supabase: ${error.message}`);
+    if (error) throw new Error(`Unable to save CAMPORA compatibility state: ${error.message}`);
   });
   await stateWriteQueue;
 }
