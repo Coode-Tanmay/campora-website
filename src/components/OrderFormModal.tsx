@@ -73,16 +73,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   // Step 4: College/University Template Support
   const [hasCollegeTemplate, setHasCollegeTemplate] = useState<boolean>(initialTemplateMode);
-  const [collegeTemplateFile, setCollegeTemplateFile] = useState<OrderAttachment | null>(
-    initialTemplateMode
-      ? { id: 'tmpl-init', name: 'University_Seminar_Guidelines_2026.pptx', size: '2.1 MB', type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', uploadedAt: 'Just now' }
-      : null
-  );
-  const [templateInstructions, setTemplateInstructions] = useState(
-    initialTemplateMode
-      ? 'Please use official university blue & gold slide headers and placement of the department crest on slide 1.'
-      : ''
-  );
+  const [collegeTemplateFile, setCollegeTemplateFile] = useState<OrderAttachment | null>(null);
+  const [templateInstructions, setTemplateInstructions] = useState('');
 
   // Step 5: Reference Material (Separate from template)
   const [referenceFiles, setReferenceFiles] = useState<OrderAttachment[]>([]);
