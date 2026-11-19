@@ -1204,8 +1204,17 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   const order = ordersStore[orderIndex];
-  const payableAmount = order.finalPrice || order.total;
-  const now = 'Today, Just now';
+  if (action === 'confirm' && (order.paymentStatus !== 'verification_pending' || !order.paymentDetails?.utrNumber)) {
+    res.status(409).json({ error: 'A submitted payment reference must be verified before confirming payment.' });
+    return;
+  }
+  if (action === 'reject' && order.paymentStatus !== 'verification_pending') {
+    res.status(409).json({ error: 'There is no submitted payment proof to reject.' });
+    return;
+  }
+
+  const payableAmount = order.finalPrice ?? order.total;
+  const now = new Date().toISOString();
 
   if (action === 'confirm') {
     const utr = order.paymentDetails?.utrNumber || 'MANUAL-ADMIN-CONFIRMED';
@@ -1248,7 +1257,11 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   if (action === 'reject') {
-    const reason = rejectionReason?.trim() || 'Payment could not be verified in bank records. Please re-check UTR and receipt.';
+    const reason = rejectionReason?.trim();
+    if (!reason) {
+      res.status(400).json({ error: 'A reason is required when rejecting payment proof.' });
+      return;
+    }
     const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
       if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
         return {
