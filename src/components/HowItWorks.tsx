@@ -20,22 +20,22 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ onStartOrder }) => {
       number: '02',
       title: 'Get Your Quote',
       icon: FileSearch,
-      short: 'Receive a transparent, instant upfront price based on your exact page count, slides, and urgency.',
-      details: 'No hidden charges or surprise add-ons. You see the exact total upfront, including applicable student promo codes and referral discounts.',
+      short: 'Fixed-price services show their price upfront. Custom and urgent requests are reviewed and quoted before payment.',
+      details: 'The order form shows the calculated price for eligible fixed-price services. If your request needs a custom quote, payment stays unavailable until the quote is approved.',
     },
     {
       number: '03',
       title: 'Make Payment',
       icon: CreditCard,
-      short: 'Confirm your order with secure UPI, Cards, or NetBanking. A dedicated specialist begins work right away.',
-      details: 'Instant order logging. You receive an Order ID (e.g. #CMP-1024) to track real-time milestones and directly chat with our team.',
+      short: 'After your order is approved, pay by UPI and submit your UTR number and payment receipt. Work begins after an administrator verifies the payment.',
+      details: 'Once your order is saved, you receive a CAMPORA Order ID and can follow status updates in your customer dashboard.',
     },
     {
       number: '04',
       title: 'Receive Your Work',
       icon: Download,
-      short: 'Download finalized, formatted, plagiarism-checked files well before your deadline. Revisions included.',
-      details: 'Get fully editable .PPTX, .DOCX, and print-ready high-res PDFs. Need minor adjustments after your professor’s review? We revise for free.',
+      short: 'Access completed files from your dashboard when the order is marked delivered. File formats and revision options depend on the selected service.',
+      details: 'Where included, deliverables are provided in editable formats such as .PPTX or .DOCX and/or PDF. Any included revision follows the scope agreed for the service.',
     },
   ];
 
@@ -110,7 +110,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ onStartOrder }) => {
 
                 {/* Bottom Highlight Indicator */}
                 <div className="mt-6 pt-3 flex items-center justify-between text-[11px] font-semibold text-[#858585] border-t border-[#2A2A2A]">
-                  <span>{isLast ? 'Guaranteed on-time' : `Step ${idx + 1} of 4`}</span>
+                  <span>{isLast ? 'Files available in your dashboard' : `Step ${idx + 1} of 4`}</span>
                   <CheckCircle2 className={`w-3.5 h-3.5 ${isLast || isSelected ? 'text-[#D4A72C]' : 'text-[#858585]'}`} />
                 </div>
 
