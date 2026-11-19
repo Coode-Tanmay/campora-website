@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, FileSearch, CreditCard, Download, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Send, FileSearch, Smartphone, Download, CheckCircle2, ArrowRight } from 'lucide-react';
 
 interface HowItWorksProps {
   onStartOrder: () => void;
@@ -26,7 +26,7 @@ export const HowItWorks: React.FC<HowItWorksProps> = ({ onStartOrder }) => {
     {
       number: '03',
       title: 'Make Payment',
-      icon: CreditCard,
+      icon: Smartphone,
       short: 'After your order is approved, pay by UPI and submit your UTR number and payment receipt. Work begins after an administrator verifies the payment.',
       details: 'Once your order is saved, you receive a CAMPORA Order ID and can follow status updates in your customer dashboard.',
     },
