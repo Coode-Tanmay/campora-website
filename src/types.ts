@@ -57,6 +57,7 @@ export interface PaymentVerificationDetails {
   upiId: string; // 'tanmayvbhagat-1@oksbi'
   utrNumber?: string;
   screenshotUrl?: string;
+  screenshotStoragePath?: string;
   screenshotName?: string;
   screenshotSize?: string;
   submittedAt?: string;
@@ -81,6 +82,8 @@ export interface OrderAttachment {
   type: string;
   uploadedAt?: string;
   dataUrl?: string;
+  storagePath?: string;
+  downloadUrl?: string;
 }
 
 export interface DeliverableFile {
@@ -90,6 +93,7 @@ export interface DeliverableFile {
   fileSize: string;
   uploadedAt: string;
   downloadUrl?: string;
+  storagePath?: string;
 }
 
 export interface CamporaOrder {
