@@ -17,6 +17,7 @@ import { AdminLogin } from './components/AdminLogin';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
 import { CustomerPortal } from './components/CustomerPortal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
+import { AuroraCursor } from './components/AuroraCursor';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder } from './types';
 import { api } from './services/api';
@@ -168,6 +169,7 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-[#0B0B0B] text-white flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
+      <AuroraCursor />
       {/* Global Toast Notification */}
       {toastMessage && (
         <div className="fixed top-20 right-4 z-50 bg-[#171717] border border-[#D4A72C] text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 animate-bounce backdrop-blur-md">
