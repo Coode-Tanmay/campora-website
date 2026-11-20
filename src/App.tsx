@@ -20,7 +20,15 @@ import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder, OrderFileUploadPayload } from './types';
 import { api } from './services/api';
-import { CheckCircle2, MessageCircle, Mail, Phone, Clock, MapPin } from 'lucide-react';
+import { CheckCircle2, MessageCircle, Mail } from 'lucide-react';
+
+declare global {
+  interface Window {
+    posthog?: {
+      capture: (event: string, properties?: Record<string, unknown>) => void;
+    };
+  }
+}
 
 function AppContent() {
   const { user, isAdmin, isCustomer } = useAuth();
@@ -31,6 +39,14 @@ function AppContent() {
   const [orders, setOrders] = useState<CamporaOrder[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Record virtual page views without sending query strings or customer data.
+  useEffect(() => {
+    window.posthog?.capture('$pageview', {
+      $current_url: `${window.location.origin}${window.location.pathname}`,
+      page_name: currentTab,
+    });
+  }, [currentTab]);
 
   // Handle URL path routing and protect customer/admin pages
   useEffect(() => {
@@ -46,7 +62,7 @@ function AppContent() {
       }
 
       // Protected customer pages
-      const isProtectedCustomerRoute = 
+      const isProtectedCustomerRoute =
         combined.includes('/dashboard') ||
         combined.includes('/my-orders') ||
         combined.includes('/orders') ||
