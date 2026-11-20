@@ -74,7 +74,7 @@ Microsoft's redirect URI, if enabled later, must be:
 ## Production operations
 
 - Render service: `campora-website`, one instance, free plan at the time of this update.
-- Set the Render **Health Check Path** to `/api/health` in the service's Settings page. The endpoint checks the Supabase state record and confirms the private Storage bucket is available.
+- Render **Health Check Path** is configured as `/api/health`. The endpoint checks the Supabase state record and confirms the private Storage bucket is available.
 - The free Render plan may spin down when idle, so the first request after inactivity can be slow.
 - The current in-memory rate limiter assumes one backend instance. Use a shared limiter store (for example Redis/Render Key Value) before scaling to multiple instances.
 - Keep a current backup/export of the Supabase database and test restoration before relying on it operationally.
@@ -89,7 +89,7 @@ These items need explicit product/operations decisions and end-to-end verificati
 4. Payment is UPI/manual verification. The system records a UTR and optional screenshot; an administrator must independently verify the transaction. It is not an automated payment gateway.
 5. The primary app state is a single JSONB document and in-process cache. This is a transitional architecture, not a high-concurrency multi-instance data model. Migrate to normalized transactional tables and shared concurrency control before scaling.
 6. File upload/download flows, admin workflows, and payment transitions still require controlled end-to-end tests using dedicated test accounts and test orders. Do not use real customer orders as test fixtures.
-7. Configure the Render health-check path as described above; the endpoint is deployed and has returned healthy status, but the Render service setting has not yet been configured.
+7. The Render health-check path is configured as `/api/health`; the endpoint has returned healthy status. Continue monitoring health checks and deployment status.
 
 ## Data safety
 
