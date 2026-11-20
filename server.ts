@@ -1201,6 +1201,7 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     return step;
   });
 
+  const previousScreenshotPath = order.paymentDetails?.screenshotPath;
   const updatedOrder: CamporaOrder = {
     ...order,
     paymentStatus: 'verification_pending',
@@ -1221,7 +1222,17 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   };
 
   ordersStore[orderIndex] = updatedOrder;
-  await persistState();
+  try {
+    await persistState();
+  } catch {
+    ordersStore[orderIndex] = order;
+    await removePrivateFiles(safeScreenshotPath ? [safeScreenshotPath] : []);
+    res.status(500).json({ error: 'Payment proof could not be saved. Please try again.' });
+    return;
+  }
+  if (previousScreenshotPath && previousScreenshotPath !== safeScreenshotPath) {
+    await removePrivateFiles([previousScreenshotPath]);
+  }
 
   const hydratedOrder = await hydrateOrderForResponse(updatedOrder);
   const { adminNotes, ...customerSafeOrder } = hydratedOrder;
@@ -1255,7 +1266,7 @@ app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Respon
 // ==========================================
 
 // Dashboard Overview Metrics
-app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/overview', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const totalOrders = ordersStore.length;
   const newOrders = ordersStore.filter((o) => o.status === 'new_order').length;
   const pendingApproval = ordersStore.filter((o) => o.status === 'new_order' || o.status === 'under_review' || o.status === 'requirements_review').length;
@@ -1278,7 +1289,7 @@ app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Respon
       cancelledOrders,
       totalRevenue,
     },
-    recentOrders: ordersStore.slice(0, 10),
+    recentOrders: await Promise.all(ordersStore.slice(0, 10).map(hydrateOrderForResponse)),
   });
 });
 
@@ -1392,7 +1403,7 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
-  res.json({ success: true, order: updatedOrder });
+  res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
 });
 
 // Admin Payment Verification (Confirm or Reject)
@@ -1455,7 +1466,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     ordersStore[orderIndex] = updatedOrder;
     await persistState();
-    res.json({ success: true, message: `Payment verified for ₹${payableAmount}. Order is now in progress.`, order: updatedOrder });
+    res.json({ success: true, message: `Payment verified for ₹${payableAmount}. Order is now in progress.`, order: await hydrateOrderForResponse(updatedOrder) });
     return;
   }
 
@@ -1491,7 +1502,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     ordersStore[orderIndex] = updatedOrder;
     await persistState();
-    res.json({ success: true, message: 'Payment marked as rejected.', order: updatedOrder });
+    res.json({ success: true, message: 'Payment marked as rejected.', order: await hydrateOrderForResponse(updatedOrder) });
     return;
   }
 
@@ -1590,7 +1601,7 @@ app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUs
   ordersStore[orderIndex].updatedAt = new Date().toISOString();
   await persistState();
 
-  res.json({ success: true, order: ordersStore[orderIndex] });
+  res.json({ success: true, order: await hydrateOrderForResponse(ordersStore[orderIndex]) });
 });
 
 // Admin List All Customers
