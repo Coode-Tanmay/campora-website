@@ -72,7 +72,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   // Deliverable upload
   const [newDeliverableTitle, setNewDeliverableTitle] = useState('');
   const [newDeliverableType, setNewDeliverableType] = useState('PDF');
-  const [newDeliverableSize, setNewDeliverableSize] = useState('');
   const [newDeliverableFile, setNewDeliverableFile] = useState<File | null>(null);
 
   // Admin notes
@@ -228,6 +227,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     }
     if (newDeliverableFile.size > 5 * 1024 * 1024) {
       triggerToast('Deliverable files must be 5 MB or smaller.');
+      return;
+    }
+    const selectedExtension = newDeliverableFile.name.split('.').pop()?.toUpperCase();
+    if (selectedExtension !== newDeliverableType) {
+      triggerToast(`The selected file is .${selectedExtension || 'unknown'}, but the file type selector is set to ${newDeliverableType}.`);
       return;
     }
     try {
