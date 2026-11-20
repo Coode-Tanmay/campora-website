@@ -1105,7 +1105,7 @@ app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: R
 
   // Filter exclusively for this customer and mint short-lived URLs for private files.
   const userOrders = await Promise.all(ordersStore
-    .filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase())
+    .filter((o) => o.customerId === user.id)
     .map(async (order) => {
       const hydrated = await hydrateOrderForResponse(order);
       const { adminNotes, ...customerSafeOrder } = hydrated;
@@ -1128,7 +1128,7 @@ app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, re
   }
 
   // Strict ownership check: Only owner customer or admin can access
-  if (user.role !== 'admin' && order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase()) {
+  if (user.role !== 'admin' && order.customerId !== user.id) {
     res.status(403).json({ error: 'Access Denied: You do not have permission to view this order.' });
     return;
   }
@@ -1306,7 +1306,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, a
   }
 
   const order = ordersStore[orderIndex];
-  if (user.role !== 'customer' || (order.customerId !== user.id && order.customerEmail.toLowerCase() !== user.email.toLowerCase())) {
+  if (user.role !== 'customer' || order.customerId !== user.id) {
     res.status(403).json({ error: 'You cannot submit payment for this order.' });
     return;
   }
@@ -1402,7 +1402,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, a
 // Customer profile & stats
 app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Response) => {
   const user = req.user!;
-  const userOrders = ordersStore.filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase());
+  const userOrders = ordersStore.filter((o) => o.customerId === user.id);
   
   const totalSpent = userOrders.filter((o) => o.paymentStatus === 'paid').reduce((sum, o) => sum + (o.finalPrice || o.total), 0);
   const activeOrders = userOrders.filter((o) => o.status !== 'completed' && o.status !== 'cancelled');
