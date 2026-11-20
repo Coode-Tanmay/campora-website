@@ -138,6 +138,8 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.ppt': 'application/vnd.ms-powerpoint',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
   '.zip': 'application/zip',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
