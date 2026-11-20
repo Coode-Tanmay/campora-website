@@ -490,7 +490,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       <td className="py-3 text-right">
                         {ord.paymentStatus !== 'paid' && (
                           <div className="inline-flex gap-2">
-                            {razorpayEnabled && ord.status === 'approved' ? (
+                            {razorpayEnabled && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
                               <button onClick={() => handleStartRazorpayCheckout(ord)} disabled={startingPaymentFor === ord.id} className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20">{ord.paymentGateway?.status === 'created' ? 'Resume Checkout' : 'Pay Securely'}</button>
                             ) : (
                               <button onClick={() => setShowPaymentModalFor(ord)} className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700">Manual UPI</button>
