@@ -315,9 +315,6 @@ const requireAdmin = (req: RequestWithUser, res: Response, next: NextFunction): 
 
 app.use(authenticateToken);
 
-// ==========================================
-app.use(authenticateToken);
-
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 let rateLimitRequestCount = 0;
 
