@@ -533,13 +533,22 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => alert(`Downloading final deliverable: ${deliv.title}`)}
-                            className="p-2 rounded-xl bg-[#1D1D1D] hover:bg-[#D4A72C] hover:text-[#0B0B0B] text-[#B8B8B8] transition-colors border border-[#2A2A2A]"
-                            title="Download Deliverable"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
+                          {deliv.downloadUrl ? (
+                            <a
+                              href={deliv.downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download
+                              className="p-2 rounded-xl bg-[#1D1D1D] hover:bg-[#D4A72C] hover:text-[#0B0B0B] text-[#B8B8B8] transition-colors border border-[#2A2A2A]"
+                              title="Download Deliverable"
+                            >
+                              <Download className="w-4 h-4" />
+                            </a>
+                          ) : (
+                            <span className="p-2 rounded-xl bg-[#1D1D1D] text-[#585858] border border-[#2A2A2A]" title="File is not available">
+                              <Download className="w-4 h-4" />
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
