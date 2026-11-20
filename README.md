@@ -53,6 +53,12 @@ Configure these in the server host's secret/environment settings. Never commit r
 | `MICROSOFT_CLIENT_ID` | Optional Microsoft OAuth client ID |
 | `MICROSOFT_CLIENT_SECRET` | Optional Microsoft OAuth client secret |
 | `GEMINI_API_KEY` | Optional/feature-dependent Gemini API key |
+| `RAZORPAY_ENABLED` | Must remain `false` until the owner explicitly approves activation after testing |
+| `RAZORPAY_MODE` | Must explicitly be `test` or `live`; missing/invalid values disable the gateway; set to `live` only after sandbox validation |
+| `RAZORPAY_LIVE_APPROVED` | Must remain `false`; required to be explicitly set to `true` before live mode can activate |
+| `RAZORPAY_KEY_ID` | Server-side Razorpay key ID (public checkout ID is returned only when enabled) |
+| `RAZORPAY_KEY_SECRET` | Server-only Razorpay API secret; never expose to frontend |
+| `RAZORPAY_WEBHOOK_SECRET` | Server-only webhook signing secret configured to match Razorpay Dashboard |
 
 Google's authorized redirect URI must be:
 
@@ -86,7 +92,7 @@ These items need explicit product/operations decisions and end-to-end verificati
 1. Customer email/password registration currently creates accounts without an email-verification workflow. Password reset/recovery is not implemented.
 2. Order notifications and transactional email are not wired to an email delivery provider.
 3. Microsoft OAuth is not configured in production.
-4. Payment is UPI/manual verification. The system records a UTR and optional screenshot; an administrator must independently verify the transaction. It is not an automated payment gateway.
+4. Razorpay Standard Checkout integration is being prepared behind `RAZORPAY_ENABLED=false` by default. It cannot accept payments until the owner configures merchant credentials, webhook secret and explicitly enables the feature. The existing UPI/manual verification path remains available while Razorpay is disabled.
 5. The primary app state is a single JSONB document and in-process cache. This is a transitional architecture, not a high-concurrency multi-instance data model. Migrate to normalized transactional tables and shared concurrency control before scaling.
 6. File upload/download flows, admin workflows, and payment transitions still require controlled end-to-end tests using dedicated test accounts and test orders. Do not use real customer orders as test fixtures.
 7. The Render health-check path is configured as `/api/health`; the endpoint has returned healthy status. Continue monitoring health checks and deployment status.
@@ -94,3 +100,13 @@ These items need explicit product/operations decisions and end-to-end verificati
 ## Data safety
 
 Do not reset, truncate, or reseed production tables to test the application. Use dedicated test accounts and test orders, and remove test records only after confirming they are not linked to real customer activity. Never share environment secrets, OAuth client secrets, JWT secrets, customer passwords, payment screenshots, or private signed URLs.
+
+## Razorpay integration (not activated)
+
+- Server-side Razorpay Orders API creates a gateway order using the approved CAMPORA payable amount; the browser never supplies the payable amount.
+- Checkout signature is verified server-side and payment details are fetched from Razorpay. CAMPORA marks an order paid only after the gateway reports the payment as captured.
+- Configure Razorpay payment capture to **auto-capture** in the merchant dashboard. CAMPORA intentionally does not treat an `authorized` payment as paid; only captured payments qualify.
+- Webhooks use the raw request body and `x-razorpay-signature` HMAC verification. Supported events are `payment.captured`, `order.paid` and `payment.failed`.
+- Customer ownership checks, amount/currency matching, duplicate webhook event handling and payment-attempt rate limiting are applied.
+- The feature flag defaults off. `RAZORPAY_MODE` must explicitly be `test` or `live` and the key ID prefix must match that mode; missing/invalid values disable the gateway. Live mode additionally requires `RAZORPAY_LIVE_APPROVED=true`. Do not add live credentials or enable the feature until sandbox tests pass and the owner explicitly approves live activation.
+- Webhook URL to configure after merchant setup: `https://campora-website.vercel.app/api/payments/razorpay/webhook`.

@@ -67,6 +67,18 @@ export interface PaymentVerificationDetails {
   rejectionReason?: string;
 }
 
+export interface PaymentGatewayDetails {
+  provider: 'razorpay';
+  orderId: string;
+  paymentId?: string;
+  status: 'created' | 'captured' | 'failed';
+  amount: number; // paise
+  currency: 'INR';
+  createdAt: string;
+  paidAt?: string;
+  webhookEventIds?: string[];
+}
+
 export interface TimelineStep {
   id: string;
   title: string;
@@ -137,6 +149,7 @@ export interface CamporaOrder {
   quoteStatus: QuoteStatus;
   paymentStatus: PaymentStatus;
   paymentDetails?: PaymentVerificationDetails;
+  paymentGateway?: PaymentGatewayDetails;
   
   // Status Tracking
   status: OrderStatus;

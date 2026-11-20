@@ -667,8 +667,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         <Eye className="w-3.5 h-3.5" /> Move to Review
                       </button>
 
-                      {/* Confirm Payment */}
-                      {activeOrder.paymentStatus !== 'paid' && (
+                      {/* Online Razorpay payments are confirmed only by a verified gateway callback/webhook. */}
+                      {activeOrder.paymentGateway?.provider === 'razorpay' && activeOrder.paymentGateway.status === 'created' && activeOrder.paymentStatus !== 'paid' && (
+                        <span className="px-3 py-2 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20 text-xs font-semibold">
+                          Awaiting Razorpay payment confirmation
+                        </span>
+                      )}
+                      {/* Manual payment confirmation remains for legacy UPI proof only. */}
+                      {activeOrder.paymentStatus !== 'paid' && !(activeOrder.paymentGateway?.provider === 'razorpay' && activeOrder.paymentGateway.status === 'created') && (
                         <button
                           id="btn-admin-confirm-pay"
                           onClick={() => handleConfirmPayment()}

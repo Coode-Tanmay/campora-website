@@ -28,6 +28,15 @@ import { CamporaOrder, TimelineStep } from '../types';
 import { api } from '../services/api';
 import { ManualPaymentSection } from './ManualPaymentSection';
 
+const loadRazorpayCheckout = (): Promise<boolean> => new Promise((resolve) => {
+  if ((window as any).Razorpay) { resolve(true); return; }
+  const script = document.createElement('script');
+  script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+  script.onload = () => resolve(Boolean((window as any).Razorpay));
+  script.onerror = () => resolve(false);
+  document.body.appendChild(script);
+});
+
 interface CustomerPortalProps {
   onBackToHome: () => void;
   onNewOrder: () => void;
@@ -42,6 +51,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   const [selectedOrder, setSelectedOrder] = useState<CamporaOrder | null>(null);
   const [showPaymentModalFor, setShowPaymentModalFor] = useState<CamporaOrder | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
+  const [razorpayEnabled, setRazorpayEnabled] = useState(false);
+  const [startingPaymentFor, setStartingPaymentFor] = useState<string | null>(null);
 
   const fetchOrders = async () => {
     setIsLoading(true);
@@ -58,7 +69,52 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
 
   useEffect(() => {
     fetchOrders();
+    api.getRazorpayConfig().then((config) => setRazorpayEnabled(config.enabled && Boolean(config.keyId))).catch(() => setRazorpayEnabled(false));
   }, []);
+
+  const handleStartRazorpayCheckout = async (order: CamporaOrder) => {
+    if (startingPaymentFor) return;
+    setStartingPaymentFor(order.id);
+    try {
+      const checkoutOrder = await api.createRazorpayOrder(order.id);
+      const scriptReady = await loadRazorpayCheckout();
+      if (!scriptReady || !(window as any).Razorpay) throw new Error('Secure checkout could not be loaded. Please try again.');
+      const RazorpayCheckout = (window as any).Razorpay;
+      const checkout = new RazorpayCheckout({
+        key: checkoutOrder.keyId,
+        amount: checkoutOrder.amount,
+        currency: checkoutOrder.currency,
+        name: 'CAMPORA',
+        description: order.serviceName,
+        order_id: checkoutOrder.orderId,
+        prefill: { name: user?.name || '', email: user?.email || '', contact: user?.whatsapp || '' },
+        notes: { campora_order_id: order.id },
+        theme: { color: '#F59E0B' },
+        handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+          try {
+            const result = await api.verifyRazorpayPayment(order.id, response);
+            window.alert(result.message);
+            await fetchOrders();
+          } catch (error: any) {
+            window.alert(error.message || 'We could not verify the payment yet. Your payment status will refresh when the gateway confirms it.');
+            await fetchOrders();
+          } finally {
+            setStartingPaymentFor(null);
+          }
+        },
+        modal: { ondismiss: () => { setStartingPaymentFor(null); fetchOrders(); } },
+      });
+      checkout.on('payment.failed', (response: any) => {
+        setStartingPaymentFor(null);
+        window.alert(response?.error?.description || 'Payment was not completed. You can retry from your order dashboard.');
+        fetchOrders();
+      });
+      checkout.open();
+    } catch (error: any) {
+      setStartingPaymentFor(null);
+      window.alert(error.message || 'Unable to start secure payment. Please try again.');
+    }
+  };
 
   const handleCopyReferral = (code: string) => {
     navigator.clipboard.writeText(`Use code ${code} for ₹50 off on CAMPORA Academic Services!`);
@@ -295,14 +351,28 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
 
                     <div className="flex items-center gap-2">
                       {ord.paymentStatus !== 'paid' && (
-                        <button
-                          id={`btn-pay-now-${ord.id}`}
-                          onClick={() => setShowPaymentModalFor(ord)}
-                          className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm"
-                        >
-                          <QrCode className="w-3.5 h-3.5" />
-                          {ord.paymentStatus === 'verification_pending' ? 'View/Update UPI Proof' : 'Pay via UPI'}
-                        </button>
+                        <>
+                          {razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
+                            <button
+                              id={`btn-razorpay-${ord.id}`}
+                              disabled={startingPaymentFor === ord.id}
+                              onClick={() => handleStartRazorpayCheckout(ord)}
+                              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm"
+                            >
+                              <CreditCard className="w-3.5 h-3.5" />
+                              {startingPaymentFor === ord.id ? 'Opening checkout…' : ord.paymentGateway?.status === 'created' ? 'Resume Secure Checkout' : 'Pay Securely'}
+                            </button>
+                          ) : (
+                            <button
+                              id={`btn-pay-now-${ord.id}`}
+                              onClick={() => setShowPaymentModalFor(ord)}
+                              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-medium text-xs transition-colors flex items-center gap-1.5"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                              {ord.paymentStatus === 'verification_pending' ? 'View/Update UPI Proof' : 'Manual UPI'}
+                            </button>
+                          )}
+                        </>
                       )}
 
                       <button
@@ -419,12 +489,13 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       <td className="py-3">{getPaymentBadge(ord.paymentStatus)}</td>
                       <td className="py-3 text-right">
                         {ord.paymentStatus !== 'paid' && (
-                          <button
-                            onClick={() => setShowPaymentModalFor(ord)}
-                            className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20"
-                          >
-                            Submit Proof
-                          </button>
+                          <div className="inline-flex gap-2">
+                            {razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
+                              <button onClick={() => handleStartRazorpayCheckout(ord)} disabled={startingPaymentFor === ord.id} className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20">{ord.paymentGateway?.status === 'created' ? 'Resume Checkout' : 'Pay Securely'}</button>
+                            ) : (
+                              <button onClick={() => setShowPaymentModalFor(ord)} className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700">Manual UPI</button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>

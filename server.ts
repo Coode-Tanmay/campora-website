@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
@@ -20,6 +20,17 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
+const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
+const RAZORPAY_MODE = process.env.RAZORPAY_MODE === 'test' || process.env.RAZORPAY_MODE === 'live' ? process.env.RAZORPAY_MODE : 'disabled';
+const razorpayKeyMatchesMode = RAZORPAY_MODE === 'test'
+  ? Boolean(RAZORPAY_KEY_ID?.startsWith('rzp_test_'))
+  : RAZORPAY_MODE === 'live' ? Boolean(RAZORPAY_KEY_ID?.startsWith('rzp_live_')) : false;
+const RAZORPAY_ENABLED = process.env.RAZORPAY_ENABLED === 'true'
+  && Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET && RAZORPAY_WEBHOOK_SECRET)
+  && razorpayKeyMatchesMode
+  && (RAZORPAY_MODE !== 'live' || process.env.RAZORPAY_LIVE_APPROVED === 'true');
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY. Configure the server-side Supabase secret key.');
@@ -55,6 +66,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const isLargeFileUpload = req.method === 'POST' && (
     req.path === '/api/customer/orders'
     || /^\/api\/admin\/orders\/[^/]+\/deliverables$/.test(req.path)
+    || req.path === '/api/payments/razorpay/webhook'
   );
   if (isLargeFileUpload) {
     next();
@@ -73,7 +85,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     return;
   }
   const origin = req.get('origin');
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && req.path !== '/api/payments/razorpay/webhook') {
     try {
       if (!origin || new URL(origin).origin !== getRequestOrigin(req)) {
         res.status(403).json({ error: 'Request origin could not be verified.' });
@@ -433,6 +445,46 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.status(503).json({ status: 'degraded', checks: { database: 'unavailable', privateStorage: 'unavailable' } });
   }
+});
+
+// Razorpay webhooks are server-to-server and must be verified against the raw body.
+app.post('/api/payments/razorpay/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req: Request, res: Response) => {
+  if (!RAZORPAY_WEBHOOK_SECRET || !Buffer.isBuffer(req.body)) { res.status(503).json({ error: 'Payment webhook is not configured.' }); return; }
+  const signature = req.get('x-razorpay-signature') || '';
+  const expected = createHmac('sha256', RAZORPAY_WEBHOOK_SECRET).update(req.body).digest('hex');
+  const suppliedBuffer = Buffer.from(signature, 'utf8'); const expectedBuffer = Buffer.from(expected, 'utf8');
+  if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) { res.status(400).json({ error: 'Invalid webhook signature.' }); return; }
+  let event: any;
+  try { event = JSON.parse(req.body.toString('utf8')); } catch { res.status(400).json({ error: 'Invalid webhook payload.' }); return; }
+  const eventId = req.get('x-razorpay-event-id') || event?.id;
+  const payment = event?.payload?.payment?.entity;
+  const razorpayOrderId = payment?.order_id || event?.payload?.order?.entity?.id;
+  if (!razorpayOrderId || !['payment.captured', 'order.paid', 'payment.failed'].includes(event?.event)) { res.status(200).json({ received: true, ignored: true }); return; }
+  const orderIndex = ordersStore.findIndex((order) => order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.orderId === razorpayOrderId);
+  if (orderIndex === -1) { res.status(200).json({ received: true, ignored: true }); return; }
+  const order = ordersStore[orderIndex]; const gateway = order.paymentGateway!;
+  if (eventId && gateway.webhookEventIds?.includes(eventId)) { res.status(200).json({ received: true, duplicate: true }); return; }
+  const amount = Number(payment?.amount ?? event?.payload?.order?.entity?.amount_paid ?? 0);
+  const expectedAmount = Math.round((order.finalPrice ?? order.total) * 100);
+  const currency = payment?.currency || event?.payload?.order?.entity?.currency || 'INR';
+  if (event.event === 'payment.captured' || event.event === 'order.paid') {
+    if (amount !== expectedAmount || currency !== 'INR' || (payment?.status && payment.status !== 'captured')) { res.status(400).json({ error: 'Payment amount or currency does not match this CAMPORA order.' }); return; }
+    if (order.paymentStatus !== 'paid') {
+      const now = new Date().toISOString();
+      const updatedTimeline = order.timeline.map((step) => {
+        if (step.id === 't3' || step.title.toLowerCase().includes('payment')) return { ...step, title: 'Payment Confirmed', description: `₹${(order.finalPrice ?? order.total)} captured securely via Razorpay.`, status: 'completed' as const, timestamp: now };
+        if (step.id === 't4' || step.title.toLowerCase().includes('progress')) return { ...step, status: 'current' as const };
+        return step;
+      });
+      const updatedOrder: CamporaOrder = { ...order, paymentStatus: 'paid', status: 'in_progress', progressPercent: Math.max(order.progressPercent, 50), paymentGateway: { ...gateway, status: 'captured', paymentId: payment?.id, paidAt: now, webhookEventIds: [...(gateway.webhookEventIds || []), ...(eventId ? [eventId] : [])].slice(-50) }, timeline: updatedTimeline, updatedAt: now };
+      ordersStore[orderIndex] = updatedOrder;
+      try { await persistState(); } catch (error) { ordersStore[orderIndex] = order; throw error; }
+    }
+  } else if (event.event === 'payment.failed' && order.paymentStatus !== 'paid') {
+    ordersStore[orderIndex] = { ...order, paymentGateway: { ...gateway, status: 'failed', paymentId: payment?.id, webhookEventIds: [...(gateway.webhookEventIds || []), ...(eventId ? [eventId] : [])].slice(-50) }, updatedAt: new Date().toISOString() };
+    try { await persistState(); } catch (error) { ordersStore[orderIndex] = order; throw error; }
+  }
+  res.status(200).json({ received: true });
 });
 
 // ==========================================
@@ -1115,6 +1167,67 @@ app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: R
   res.json({ orders: userOrders });
 });
 
+// Razorpay capability is intentionally disabled until explicitly enabled in Render.
+app.get('/api/payments/razorpay/config', (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ enabled: RAZORPAY_ENABLED, keyId: RAZORPAY_ENABLED ? RAZORPAY_KEY_ID : null, currency: 'INR' });
+});
+
+const razorpayPaymentLimiter = createRateLimiter({ name: 'razorpay-order-create', windowMs: 60 * 60 * 1000, max: 10, key: (req, ip) => `${req.user?.id || ip}:${req.params.id || 'unknown'}`, message: 'Too many payment attempts for this order. Please try again later.' });
+
+app.post('/api/customer/orders/:id/razorpay/order', razorpayPaymentLimiter, requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (!RAZORPAY_ENABLED || !RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) { res.status(503).json({ error: 'Online payments are not enabled yet.' }); return; }
+  const orderIndex = ordersStore.findIndex((order) => order.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex === -1) { res.status(404).json({ error: 'Order not found.' }); return; }
+  const order = ordersStore[orderIndex];
+  if (req.user!.role !== 'customer' || order.customerId !== req.user!.id) { res.status(403).json({ error: 'You cannot pay for this order.' }); return; }
+  if (order.paymentStatus === 'paid' || order.paymentStatus === 'verification_pending' || ['cancelled', 'rejected', 'completed'].includes(order.status) || order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review') { res.status(409).json({ error: 'This order is not currently eligible for payment.' }); return; }
+  if (order.status !== 'approved' && order.status !== 'payment_pending' && order.quoteStatus !== 'accepted') { res.status(409).json({ error: 'Your order must be approved and priced before payment.' }); return; }
+  const payableRupees = order.finalPrice ?? order.total; const payablePaise = Math.round(payableRupees * 100);
+  if (!Number.isSafeInteger(payablePaise) || payablePaise <= 0) { res.status(400).json({ error: 'The payable amount is invalid.' }); return; }
+  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status !== 'captured' && order.paymentGateway.amount === payablePaise) {
+    res.json({ keyId: RAZORPAY_KEY_ID, orderId: order.paymentGateway.orderId, amount: payablePaise, currency: 'INR', camporaOrderId: order.id }); return;
+  }
+  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+  const gatewayResponse = await fetch('https://api.razorpay.com/v1/orders', { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: payablePaise, currency: 'INR', receipt: `${order.id}-${randomBytes(4).toString('hex')}`.slice(0, 40), notes: { campora_order_id: order.id, customer_id: order.customerId } }) });
+  const gatewayData: any = await gatewayResponse.json().catch(() => ({}));
+  if (!gatewayResponse.ok || !gatewayData.id) { console.error('Razorpay order creation failed:', gatewayData.error?.code || gatewayResponse.status); res.status(502).json({ error: 'Unable to start secure checkout. Please try again.' }); return; }
+  const updatedOrder: CamporaOrder = { ...order, paymentGateway: { provider: 'razorpay', orderId: gatewayData.id, status: 'created', amount: gatewayData.amount, currency: 'INR', createdAt: new Date().toISOString() }, updatedAt: new Date().toISOString() };
+  ordersStore[orderIndex] = updatedOrder;
+  try { await persistState(); } catch (error) { ordersStore[orderIndex] = order; throw error; }
+  res.json({ keyId: RAZORPAY_KEY_ID, orderId: gatewayData.id, amount: gatewayData.amount, currency: 'INR', camporaOrderId: order.id });
+});
+
+app.post('/api/customer/orders/:id/razorpay/verify', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (!RAZORPAY_ENABLED || !RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) { res.status(503).json({ error: 'Online payments are not enabled.' }); return; }
+  const orderIndex = ordersStore.findIndex((order) => order.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex === -1) { res.status(404).json({ error: 'Order not found.' }); return; }
+  const order = ordersStore[orderIndex];
+  if (req.user!.role !== 'customer' || order.customerId !== req.user!.id) { res.status(403).json({ error: 'You cannot verify payment for this order.' }); return; }
+  const { razorpay_payment_id: paymentId, razorpay_order_id: gatewayOrderId, razorpay_signature: signature } = req.body || {};
+  if (!paymentId || !gatewayOrderId || !signature || order.paymentGateway?.provider !== 'razorpay' || order.paymentGateway.orderId !== gatewayOrderId) { res.status(400).json({ error: 'Payment response does not match this order.' }); return; }
+  const expectedSignature = createHmac('sha256', RAZORPAY_KEY_SECRET).update(`${gatewayOrderId}|${paymentId}`).digest('hex');
+  const supplied = Buffer.from(String(signature), 'utf8'); const expected = Buffer.from(expectedSignature, 'utf8');
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) { res.status(400).json({ error: 'Payment signature verification failed.' }); return; }
+  const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+  const paymentResponse = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(String(paymentId))}`, { headers: { Authorization: `Basic ${auth}` } });
+  const payment: any = await paymentResponse.json().catch(() => ({}));
+  if (!paymentResponse.ok || payment.order_id !== gatewayOrderId || payment.amount !== order.paymentGateway.amount || payment.currency !== 'INR') { res.status(400).json({ error: 'Gateway payment details could not be verified against this order.' }); return; }
+  if (payment.status !== 'captured') { res.status(202).json({ success: false, pending: true, message: 'Payment is awaiting capture confirmation. Your order will update automatically once confirmed.' }); return; }
+  if (order.paymentStatus !== 'paid') {
+    const now = new Date().toISOString();
+    const updatedTimeline = order.timeline.map((step) => {
+      if (step.id === 't3' || step.title.toLowerCase().includes('payment')) return { ...step, title: 'Payment Confirmed', description: `₹${(order.finalPrice ?? order.total)} captured securely via Razorpay.`, status: 'completed' as const, timestamp: now };
+      if (step.id === 't4' || step.title.toLowerCase().includes('progress')) return { ...step, status: 'current' as const };
+      return step;
+    });
+    const updatedOrder: CamporaOrder = { ...order, paymentStatus: 'paid', status: 'in_progress', progressPercent: Math.max(order.progressPercent, 50), paymentGateway: { ...order.paymentGateway, status: 'captured', paymentId, paidAt: now }, timeline: updatedTimeline, updatedAt: now };
+    ordersStore[orderIndex] = updatedOrder;
+    try { await persistState(); } catch (error) { ordersStore[orderIndex] = order; throw error; }
+  }
+  res.json({ success: true, message: 'Payment captured and verified.', order: await hydrateOrderForResponse(ordersStore[orderIndex]) });
+});
+
 // Get single order with strict ownership authorization
 app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
@@ -1308,6 +1421,10 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, a
   const order = ordersStore[orderIndex];
   if (user.role !== 'customer' || order.customerId !== user.id) {
     res.status(403).json({ error: 'You cannot submit payment for this order.' });
+    return;
+  }
+  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status === 'created') {
+    res.status(409).json({ error: 'A secure online checkout is already open for this order. Complete it or wait for the payment attempt to fail before using manual UPI.' });
     return;
   }
 
