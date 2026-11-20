@@ -798,7 +798,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                             {collegeTemplateFile ? 'Replace Template File' : 'Click to upload your College Template'}
                           </span>
                           <span className="text-[11px] text-[#858585] mt-0.5">
-                            PDF, DOCX, PPTX, JPG, PNG (up to 5 MB per file (8 MB total per order))
+                            PDF, DOCX, PPTX, JPG, PNG (5 MB per file; 8 MB total per order)
                           </span>
                           <input
                             type="file"
