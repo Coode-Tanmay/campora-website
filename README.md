@@ -105,6 +105,7 @@ Do not reset, truncate, or reseed production tables to test the application. Use
 
 - Server-side Razorpay Orders API creates a gateway order using the approved CAMPORA payable amount; the browser never supplies the payable amount.
 - Checkout signature is verified server-side and payment details are fetched from Razorpay. CAMPORA marks an order paid only after the gateway reports the payment as captured.
+- Configure Razorpay payment capture to **auto-capture** in the merchant dashboard. CAMPORA intentionally does not treat an `authorized` payment as paid; only captured payments qualify.
 - Webhooks use the raw request body and `x-razorpay-signature` HMAC verification. Supported events are `payment.captured`, `order.paid` and `payment.failed`.
 - Customer ownership checks, amount/currency matching, duplicate webhook event handling and payment-attempt rate limiting are applied.
 - The feature flag defaults off. `RAZORPAY_MODE` must explicitly be `test` or `live` and the key ID prefix must match that mode; missing/invalid values disable the gateway. Live mode additionally requires `RAZORPAY_LIVE_APPROVED=true`. Do not add live credentials or enable the feature until sandbox tests pass and the owner explicitly approves live activation.
