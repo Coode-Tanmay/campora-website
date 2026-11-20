@@ -20,7 +20,7 @@ interface UpiPaymentCardProps {
   orderId?: string;
   serviceName?: string;
   order?: CamporaOrder;
-  onPaymentSubmitted?: (utrNumber: string, screenshotUrl: string, screenshotName: string) => void;
+  onPaymentSubmitted?: (utrNumber: string, screenshotUrl: string, screenshotName: string) => void | Promise<void>;
   compact?: boolean;
 }
 
@@ -230,9 +230,9 @@ export const UpiPaymentCard: React.FC<UpiPaymentCardProps> = ({
         amount={amount}
         orderId={orderId || order?.id || 'CMP-ORDER'}
         serviceName={serviceName || order?.serviceName || 'Academic Service'}
-        onConfirm={(utr, screenshotUrl, screenshotName) => {
+        onConfirm={async (utr, screenshotUrl, screenshotName) => {
           if (onPaymentSubmitted) {
-            onPaymentSubmitted(utr, screenshotUrl, screenshotName);
+            await onPaymentSubmitted(utr, screenshotUrl, screenshotName);
           }
           setIsModalOpen(false);
         }}
