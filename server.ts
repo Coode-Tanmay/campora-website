@@ -698,34 +698,40 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
 
+    if (!profileResponse.ok) {
+      throw new Error('Google could not verify this account. Please try again.');
+    }
     const profile = await profileResponse.json();
-    if (!profile.email) {
-      throw new Error('Google account did not return a verified email address.');
+    if (typeof profile.email !== 'string' || profile.email_verified !== true) {
+      throw new Error('Google sign-in requires a verified email address.');
     }
 
     const email = profile.email.toLowerCase().trim();
     let user = usersStore.find((u) => u.email.toLowerCase() === email);
 
+    // Never silently link a Google identity to a password or other-provider account.
+    // A same-email account may have been registered before its owner proved email control.
+    if (user && (user.authProvider !== 'google' || user.passwordHash || user.role !== 'customer')) {
+      throw new Error('A CAMPORA account already exists with this email using another sign-in method. Please use that sign-in method. Automatic account linking is disabled for security.');
+    }
+
     if (!user) {
-      // Create new customer account with role 'customer'
       const newCustomer: StoredUser = {
         id: `cust-${Date.now()}`,
         name: profile.name || email.split('@')[0],
-        email: email,
+        email,
         avatar: profile.picture,
-        role: 'customer', // STRICT ENFORCEMENT: Never admin
+        role: 'customer',
         authProvider: 'google',
         createdAt: new Date().toISOString().split('T')[0],
       };
       usersStore.push(newCustomer);
-      await persistState();
       user = newCustomer;
     } else {
       if (profile.picture) user.avatar = profile.picture;
       if (profile.name && (!user.name || user.name === email.split('@')[0])) {
         user.name = profile.name;
       }
-      user.authProvider = 'google';
     }
 
     // Strictly enforce customer role for Google authentication
@@ -864,31 +870,36 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
 
+    if (!profileResponse.ok) {
+      throw new Error('Microsoft could not verify this account. Please try again.');
+    }
     const profile = await profileResponse.json();
-    const email = (profile.mail || profile.userPrincipalName || '').toLowerCase().trim();
+    // UPN can be a sign-in name rather than a verified mailbox; do not use it as an email fallback.
+    const email = typeof profile.mail === 'string' ? profile.mail.toLowerCase().trim() : '';
     if (!email) {
-      throw new Error('Microsoft account did not return a valid email address.');
+      throw new Error('Microsoft sign-in requires a mailbox email address. This account did not provide one.');
     }
 
     let user = usersStore.find((u) => u.email.toLowerCase() === email);
+
+    // Never silently link identities from different providers or password accounts.
+    if (user && (user.authProvider !== 'microsoft' || user.passwordHash || user.role !== 'customer')) {
+      throw new Error('A CAMPORA account already exists with this email using another sign-in method. Please use that sign-in method. Automatic account linking is disabled for security.');
+    }
 
     if (!user) {
       const newCustomer: StoredUser = {
         id: `cust-${Date.now()}`,
         name: profile.displayName || email.split('@')[0],
-        email: email,
+        email,
         role: 'customer',
         authProvider: 'microsoft',
         createdAt: new Date().toISOString().split('T')[0],
       };
       usersStore.push(newCustomer);
-      await persistState();
       user = newCustomer;
-    } else {
-      if (profile.displayName && (!user.name || user.name === email.split('@')[0])) {
-        user.name = profile.displayName;
-      }
-      user.authProvider = 'microsoft';
+    } else if (profile.displayName && (!user.name || user.name === email.split('@')[0])) {
+      user.name = profile.displayName;
     }
 
     await persistState();
