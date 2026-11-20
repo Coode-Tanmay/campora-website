@@ -54,7 +54,7 @@ Configure these in the server host's secret/environment settings. Never commit r
 | `MICROSOFT_CLIENT_SECRET` | Optional Microsoft OAuth client secret |
 | `GEMINI_API_KEY` | Optional/feature-dependent Gemini API key |
 | `RAZORPAY_ENABLED` | Must remain `false` until the owner explicitly approves activation after testing |
-| `RAZORPAY_MODE` | `test` by default; set to `live` only after sandbox validation |
+| `RAZORPAY_MODE` | Must explicitly be `test` or `live`; missing/invalid values disable the gateway; set to `live` only after sandbox validation |
 | `RAZORPAY_LIVE_APPROVED` | Must remain `false`; required to be explicitly set to `true` before live mode can activate |
 | `RAZORPAY_KEY_ID` | Server-side Razorpay key ID (public checkout ID is returned only when enabled) |
 | `RAZORPAY_KEY_SECRET` | Server-only Razorpay API secret; never expose to frontend |
@@ -107,5 +107,5 @@ Do not reset, truncate, or reseed production tables to test the application. Use
 - Checkout signature is verified server-side and payment details are fetched from Razorpay. CAMPORA marks an order paid only after the gateway reports the payment as captured.
 - Webhooks use the raw request body and `x-razorpay-signature` HMAC verification. Supported events are `payment.captured`, `order.paid` and `payment.failed`.
 - Customer ownership checks, amount/currency matching, duplicate webhook event handling and payment-attempt rate limiting are applied.
-- The feature flag defaults off. `RAZORPAY_MODE` defaults to `test`; live mode additionally requires `RAZORPAY_LIVE_APPROVED=true`. Do not add live credentials or enable the feature until sandbox tests pass and the owner explicitly approves live activation.
+- The feature flag defaults off. `RAZORPAY_MODE` must explicitly be `test` or `live` and the key ID prefix must match that mode; missing/invalid values disable the gateway. Live mode additionally requires `RAZORPAY_LIVE_APPROVED=true`. Do not add live credentials or enable the feature until sandbox tests pass and the owner explicitly approves live activation.
 - Webhook URL to configure after merchant setup: `https://campora-website.vercel.app/api/payments/razorpay/webhook`.
