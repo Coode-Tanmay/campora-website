@@ -350,7 +350,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     <div className="flex items-center gap-2">
                       {ord.paymentStatus !== 'paid' && (
                         <>
-                          {razorpayEnabled && ord.status === 'approved' && (
+                          {razorpayEnabled && ord.status === 'approved' ? (
                             <button
                               id={`btn-razorpay-${ord.id}`}
                               disabled={startingPaymentFor === ord.id}
@@ -358,17 +358,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                               className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-black font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-sm"
                             >
                               <CreditCard className="w-3.5 h-3.5" />
-                              {startingPaymentFor === ord.id ? 'Opening checkout…' : 'Pay Securely'}
+                              {startingPaymentFor === ord.id ? 'Opening checkout…' : ord.paymentGateway?.status === 'created' ? 'Resume Secure Checkout' : 'Pay Securely'}
+                            </button>
+                          ) : (
+                            <button
+                              id={`btn-pay-now-${ord.id}`}
+                              onClick={() => setShowPaymentModalFor(ord)}
+                              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-medium text-xs transition-colors flex items-center gap-1.5"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                              {ord.paymentStatus === 'verification_pending' ? 'View/Update UPI Proof' : 'Manual UPI'}
                             </button>
                           )}
-                          <button
-                            id={`btn-pay-now-${ord.id}`}
-                            onClick={() => setShowPaymentModalFor(ord)}
-                            className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-medium text-xs transition-colors flex items-center gap-1.5"
-                          >
-                            <QrCode className="w-3.5 h-3.5" />
-                            {ord.paymentStatus === 'verification_pending' ? 'View/Update UPI Proof' : 'Manual UPI'}
-                          </button>
                         </>
                       )}
 
@@ -487,8 +488,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       <td className="py-3 text-right">
                         {ord.paymentStatus !== 'paid' && (
                           <div className="inline-flex gap-2">
-                            {razorpayEnabled && ord.status === 'approved' && <button onClick={() => handleStartRazorpayCheckout(ord)} disabled={startingPaymentFor === ord.id} className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20">Pay Securely</button>}
-                            <button onClick={() => setShowPaymentModalFor(ord)} className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700">Manual UPI</button>
+                            {razorpayEnabled && ord.status === 'approved' ? (
+                              <button onClick={() => handleStartRazorpayCheckout(ord)} disabled={startingPaymentFor === ord.id} className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20">{ord.paymentGateway?.status === 'created' ? 'Resume Checkout' : 'Pay Securely'}</button>
+                            ) : (
+                              <button onClick={() => setShowPaymentModalFor(ord)} className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700">Manual UPI</button>
+                            )}
                           </div>
                         )}
                       </td>
