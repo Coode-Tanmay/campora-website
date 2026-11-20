@@ -240,6 +240,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
         file: newDeliverableFile,
       });
       setOrders((prev) => prev.map((o) => (o.id === activeOrder.id ? res.order : o)));
+      const refreshedFiles = await api.getAdminFiles().catch(() => null);
+      if (refreshedFiles) setFiles(refreshedFiles.files || []);
       setNewDeliverableTitle('');
       setNewDeliverableFile(null);
       triggerToast('Deliverable securely uploaded and order marked Completed!');
