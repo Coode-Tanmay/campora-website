@@ -23,9 +23,13 @@ const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
-const RAZORPAY_MODE = process.env.RAZORPAY_MODE === 'live' ? 'live' : 'test';
+const RAZORPAY_MODE = process.env.RAZORPAY_MODE === 'test' || process.env.RAZORPAY_MODE === 'live' ? process.env.RAZORPAY_MODE : 'disabled';
+const razorpayKeyMatchesMode = RAZORPAY_MODE === 'test'
+  ? Boolean(RAZORPAY_KEY_ID?.startsWith('rzp_test_'))
+  : RAZORPAY_MODE === 'live' ? Boolean(RAZORPAY_KEY_ID?.startsWith('rzp_live_')) : false;
 const RAZORPAY_ENABLED = process.env.RAZORPAY_ENABLED === 'true'
   && Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET && RAZORPAY_WEBHOOK_SECRET)
+  && razorpayKeyMatchesMode
   && (RAZORPAY_MODE !== 'live' || process.env.RAZORPAY_LIVE_APPROVED === 'true');
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
@@ -1181,11 +1185,11 @@ app.post('/api/customer/orders/:id/razorpay/order', razorpayPaymentLimiter, requ
   if (order.status !== 'approved' && order.status !== 'payment_pending' && order.quoteStatus !== 'accepted') { res.status(409).json({ error: 'Your order must be approved and priced before payment.' }); return; }
   const payableRupees = order.finalPrice ?? order.total; const payablePaise = Math.round(payableRupees * 100);
   if (!Number.isSafeInteger(payablePaise) || payablePaise <= 0) { res.status(400).json({ error: 'The payable amount is invalid.' }); return; }
-  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status === 'created' && order.paymentGateway.amount === payablePaise) {
+  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status !== 'captured' && order.paymentGateway.amount === payablePaise) {
     res.json({ keyId: RAZORPAY_KEY_ID, orderId: order.paymentGateway.orderId, amount: payablePaise, currency: 'INR', camporaOrderId: order.id }); return;
   }
   const auth = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
-  const gatewayResponse = await fetch('https://api.razorpay.com/v1/orders', { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: payablePaise, currency: 'INR', receipt: order.id.slice(0, 40), notes: { campora_order_id: order.id, customer_id: order.customerId } }) });
+  const gatewayResponse = await fetch('https://api.razorpay.com/v1/orders', { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: payablePaise, currency: 'INR', receipt: `${order.id}-${randomBytes(4).toString('hex')}`.slice(0, 40), notes: { campora_order_id: order.id, customer_id: order.customerId } }) });
   const gatewayData: any = await gatewayResponse.json().catch(() => ({}));
   if (!gatewayResponse.ok || !gatewayData.id) { console.error('Razorpay order creation failed:', gatewayData.error?.code || gatewayResponse.status); res.status(502).json({ error: 'Unable to start secure checkout. Please try again.' }); return; }
   const updatedOrder: CamporaOrder = { ...order, paymentGateway: { provider: 'razorpay', orderId: gatewayData.id, status: 'created', amount: gatewayData.amount, currency: 'INR', createdAt: new Date().toISOString() }, updatedAt: new Date().toISOString() };
