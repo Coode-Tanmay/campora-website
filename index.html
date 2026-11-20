@@ -8,10 +8,58 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      (function (document, window) {
+        var key = "%VITE_POSTHOG_KEY%";
+        var host = "%VITE_POSTHOG_HOST%";
+        if (!key || key.indexOf("%VITE_") === 0 || !host || host.indexOf("%VITE_") === 0) return;
+
+        var posthog = window.posthog = window.posthog || [];
+        if (posthog.__SV) return;
+        posthog._i = [];
+        posthog.init = function (token, config, name) {
+          function stub(target, method) {
+            var parts = method.split(".");
+            if (parts.length === 2) {
+              target = target[parts[0]];
+              method = parts[1];
+            }
+            target[method] = function () {
+              target.push([method].concat(Array.prototype.slice.call(arguments)));
+            };
+          }
+          var script = document.createElement("script");
+          script.type = "text/javascript";
+          script.async = true;
+          script.crossOrigin = "anonymous";
+          script.src = config.api_host.replace(".i.posthog.com", "-assets.i.posthog.com") + "/static/array.js";
+          var firstScript = document.getElementsByTagName("script")[0];
+          firstScript.parentNode.insertBefore(script, firstScript);
+
+          var instance = posthog;
+          if (name) instance = posthog[name] = [];
+          instance.people = instance.people || [];
+          instance.toString = function (stubbed) {
+            return "posthog" + (name ? "." + name : "") + (stubbed ? " (stub)" : "");
+          };
+          instance.people.toString = function () { return instance.toString(1) + ".people (stub)"; };
+          var methods = "capture identify alias people.set people.set_once set_config register register_once unregister getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags on onFeatureFlags get_distinct_id get_session_id get_session_replay_url captureException".split(" ");
+          for (var i = 0; i < methods.length; i++) stub(instance, methods[i]);
+          posthog._i.push([token, config, name]);
+        };
+        posthog.__SV = 1;
+        posthog.init(key, {
+          api_host: host,
+          defaults: "2025-05-24",
+          capture_pageview: false,
+          autocapture: false,
+          capture_pageleave: true
+        });
+      })(document, window);
+    </script>
   </head>
   <body class="bg-[#0B0B0B] text-white font-['Plus_Jakarta_Sans',sans-serif] selection:bg-[#D4A72C]/30 selection:text-[#F0D27A] antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
