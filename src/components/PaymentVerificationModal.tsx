@@ -19,7 +19,7 @@ interface PaymentVerificationModalProps {
   amount: number;
   orderId: string;
   serviceName?: string;
-  onConfirm: (utrNumber: string, screenshotUrl: string, screenshotName: string) => void;
+  onConfirm: (utrNumber: string, screenshotUrl: string, screenshotName: string) => void | Promise<void>;
 }
 
 export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> = ({
@@ -69,8 +69,9 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setErrorMsg('');
 
     const cleanUtr = utrNumber.trim();
@@ -90,11 +91,14 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      onConfirm(cleanUtr, screenshotFile.url, screenshotFile.name);
-      setIsSubmitting(false);
+    try {
+      await onConfirm(cleanUtr, screenshotFile.url, screenshotFile.name);
       onClose();
-    }, 600);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Unable to submit payment proof. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
