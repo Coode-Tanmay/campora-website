@@ -462,12 +462,12 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                 #{createdOrderSummary.id}
               </span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-['Outfit',sans-serif]">
-                {createdOrderSummary.requiresReview ? 'Order Brief Submitted for Review!' : 'Payment Confirmed & Order Logged! 🎉'}
+                {createdOrderSummary.requiresReview ? 'Order Brief Submitted for Review!' : 'Order Submitted Successfully! 🎉'}
               </h3>
               <p className="text-sm text-[#B8B8B8] max-w-lg mx-auto mt-2">
                 {createdOrderSummary.requiresReview
                   ? 'Our academic review desk is examining your brief. You will receive quote confirmation on your WhatsApp & dashboard shortly.'
-                  : 'Your academic specialist has been assigned. You can track real-time milestone progress on your student tracking dashboard.'}
+                  : 'Your order has been securely recorded. You can track its status from your student dashboard; payment is only due when the order is ready for it.'}
               </p>
             </div>
 
