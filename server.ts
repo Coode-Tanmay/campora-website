@@ -38,6 +38,7 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
 }
 
 // Middlewares
+app.set('trust proxy', 1); // Trust the Render ingress proxy so req.ip reflects the forwarded client address.
 app.disable('x-powered-by');
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -119,7 +120,11 @@ async function persistState(): Promise<void> {
     updated_at: new Date().toISOString(),
   };
   // Serialize writes so concurrent requests cannot complete out of order.
-  stateWriteQueue = stateWriteQueue.then(async () => {
+  // Recover the queue after a transient failed write so one database error does not
+  // permanently block every future order/account mutation in this process.
+  stateWriteQueue = stateWriteQueue.catch((previousError) => {
+    console.error('Recovering CAMPORA state write queue after a failed write:', previousError instanceof Error ? previousError.message : 'Unknown error');
+  }).then(async () => {
     const { error } = await supabase.from('campora_app_state').upsert(snapshot, { onConflict: 'id' });
     if (error) throw new Error(`Unable to save CAMPORA data to Supabase: ${error.message}`);
   });
@@ -309,6 +314,129 @@ const requireAdmin = (req: RequestWithUser, res: Response, next: NextFunction): 
 };
 
 app.use(authenticateToken);
+
+// ==========================================
+app.use(authenticateToken);
+
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+let rateLimitRequestCount = 0;
+
+function createRateLimiter(options: {
+  name: string;
+  windowMs: number;
+  max: number;
+  key: (req: RequestWithUser, ip: string) => string;
+  message: string;
+}) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const typedReq = req as RequestWithUser;
+    const now = Date.now();
+    const ip = typedReq.ip || typedReq.socket.remoteAddress || 'unknown';
+    const key = `${options.name}:${options.key(typedReq, ip)}`;
+    let entry = rateLimitBuckets.get(key);
+
+    if (!entry || now >= entry.resetAt) {
+      entry = { count: 0, resetAt: now + options.windowMs };
+      rateLimitBuckets.set(key, entry);
+    }
+
+    if (entry.count >= options.max) {
+      const retryAfter = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfter));
+      res.setHeader('RateLimit-Limit', String(options.max));
+      res.setHeader('RateLimit-Remaining', '0');
+      res.setHeader('RateLimit-Reset', String(retryAfter));
+      res.status(429).json({ error: options.message });
+      return;
+    }
+
+    entry.count += 1;
+    res.setHeader('RateLimit-Limit', String(options.max));
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, options.max - entry.count)));
+    res.setHeader('RateLimit-Reset', String(Math.max(1, Math.ceil((entry.resetAt - now) / 1000))));
+
+    rateLimitRequestCount += 1;
+    if (rateLimitRequestCount % 250 === 0 && rateLimitBuckets.size > 5000) {
+      for (const [bucketKey, bucket] of rateLimitBuckets) {
+        if (now >= bucket.resetAt) rateLimitBuckets.delete(bucketKey);
+      }
+    }
+
+    next();
+  };
+}
+
+// This service currently runs as one Render instance. Move these limits to a shared
+// store before enabling multiple backend instances.
+const adminLoginLimiter = createRateLimiter({
+  name: 'admin-login',
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  key: (req, ip) => `${ip}:${String(req.body?.username || 'unknown').trim().toLowerCase()}`,
+  message: 'Too many administrator sign-in attempts. Please wait 15 minutes and try again.',
+});
+const customerLoginLimiter = createRateLimiter({
+  name: 'customer-login',
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  key: (req, ip) => `${ip}:${String(req.body?.email || 'unknown').trim().toLowerCase()}`,
+  message: 'Too many sign-in attempts for this account. Please wait 15 minutes and try again.',
+});
+const orderCreationLimiter = createRateLimiter({
+  name: 'customer-order-create',
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  key: (req, ip) => req.user?.id || ip,
+  message: 'Too many new orders were submitted. Please wait before creating another order.',
+});
+const paymentProofLimiter = createRateLimiter({
+  name: 'customer-payment-proof',
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  key: (req, ip) => `${req.user?.id || ip}:${req.params.id || 'unknown'}`,
+  message: 'Too many payment-proof submissions for this order. Please wait before trying again.',
+});
+const deliverableUploadLimiter = createRateLimiter({
+  name: 'admin-deliverable-upload',
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  key: (req, ip) => req.user?.id || ip,
+  message: 'The hourly deliverable upload limit has been reached. Please try again later.',
+});
+
+// Public readiness check used by Render. It verifies both the persistent state table
+// and the private file bucket without exposing internal error messages or credentials.
+app.get('/api/health', async (_req: Request, res: Response) => {
+  try {
+    const [databaseResult, storageResult] = await Promise.all([
+      supabase.from('campora_app_state').select('id').eq('id', 'primary').maybeSingle(),
+      supabase.storage.getBucket(PRIVATE_FILES_BUCKET),
+    ]);
+    const databaseHealthy = !databaseResult.error;
+    const storageHealthy = !storageResult.error && storageResult.data?.public === false;
+
+    res.setHeader('Cache-Control', 'no-store');
+    if (!databaseHealthy || !storageHealthy) {
+      res.status(503).json({
+        status: 'degraded',
+        checks: {
+          database: databaseHealthy ? 'ok' : 'unavailable',
+          privateStorage: storageHealthy ? 'ok' : 'unavailable',
+        },
+      });
+      return;
+    }
+
+    res.json({
+      status: 'ok',
+      checks: { database: 'ok', privateStorage: 'ok' },
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(503).json({ status: 'degraded', checks: { database: 'unavailable', privateStorage: 'unavailable' } });
+  }
+});
 
 // ==========================================
 // AUTHENTICATION & OAUTH HELPERS
@@ -821,7 +949,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 });
 
 // Admin Login (Strictly separate from Customer Google Auth)
-app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
+app.post('/api/auth/admin/login', adminLoginLimiter, async (req: Request, res: Response) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -860,7 +988,7 @@ app.post('/api/auth/admin/login', async (req: Request, res: Response) => {
 });
 
 // Customer Email/Password Login & Register
-app.post('/api/auth/customer/login', async (req: Request, res: Response) => {
+app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, res: Response) => {
   const { email, password, name, whatsapp, college } = req.body;
 
   if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
@@ -992,7 +1120,7 @@ app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, re
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
-app.post('/api/customer/orders', requireAuth, express.json({ limit: '12mb' }), async (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json({ limit: '12mb' }), async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   if (user.role !== 'customer') {
     res.status(403).json({ error: 'Only customer accounts can place orders.' });
@@ -1147,7 +1275,7 @@ app.post('/api/customer/orders', requireAuth, express.json({ limit: '12mb' }), a
 });
 
 // Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
-app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
   const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body || {};
@@ -1523,7 +1651,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 });
 
 // Admin Upload Completed Deliverable
-app.post('/api/admin/orders/:id/deliverables', requireAdmin, express.json({ limit: '8mb' }), async (req: RequestWithUser, res: Response) => {
+app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, requireAdmin, express.json({ limit: '8mb' }), async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { title, fileName, dataUrl } = req.body || {};
 
