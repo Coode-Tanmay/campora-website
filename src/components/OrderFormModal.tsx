@@ -872,7 +872,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                         Click to upload reference material or notes
                       </span>
                       <span className="text-[11px] text-[#858585] mt-0.5">
-                        PDF, DOCX, PPTX, ZIP, TXT, CSV (up to 50MB)
+                        PDF, DOCX, PPTX, DOC, ZIP, TXT, CSV (5 MB per file; 8 MB total per order)
                       </span>
                       <input
                         type="file"
