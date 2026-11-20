@@ -23,7 +23,10 @@ const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
-const RAZORPAY_ENABLED = process.env.RAZORPAY_ENABLED === 'true' && Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET && RAZORPAY_WEBHOOK_SECRET);
+const RAZORPAY_MODE = process.env.RAZORPAY_MODE === 'live' ? 'live' : 'test';
+const RAZORPAY_ENABLED = process.env.RAZORPAY_ENABLED === 'true'
+  && Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET && RAZORPAY_WEBHOOK_SECRET)
+  && (RAZORPAY_MODE !== 'live' || process.env.RAZORPAY_LIVE_APPROVED === 'true');
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY. Configure the server-side Supabase secret key.');
@@ -1412,6 +1415,10 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, a
   }
 
   const order = ordersStore[orderIndex];
+  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status === 'created') {
+    res.status(409).json({ error: 'A secure online checkout is already open for this order. Complete it or wait for the payment attempt to fail before using manual UPI.' });
+    return;
+  }
   if (user.role !== 'customer' || order.customerId !== user.id) {
     res.status(403).json({ error: 'You cannot submit payment for this order.' });
     return;
