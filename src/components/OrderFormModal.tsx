@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SERVICES_DATA } from '../data/mockData';
-import { CamporaOrder, OrderAttachment, PricingType, OrderStatus, QuoteStatus, PaymentStatus } from '../types';
+import { CamporaOrder, OrderAttachment, PricingType, OrderStatus, QuoteStatus, OrderFileUploadPayload, PaymentStatus } from '../types';
 import {
   X,
   ArrowRight,
@@ -34,8 +34,22 @@ interface OrderFormModalProps {
   onClose: () => void;
   initialServiceId?: string;
   initialTemplateMode?: boolean;
-  onOrderCreated: (newOrder: CamporaOrder) => Promise<CamporaOrder>;
+  onOrderCreated: (newOrder: CamporaOrder, uploadFiles?: OrderFileUploadPayload[]) => Promise<CamporaOrder>;
 }
+
+type PendingOrderAttachment = OrderAttachment & { file: File };
+
+const MAX_ORDER_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_ORDER_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+const readFileAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error(`Could not read ${file.name}. Please select the file again.`));
+  reader.onload = () => typeof reader.result === 'string'
+    ? resolve(reader.result)
+    : reject(new Error(`Could not read ${file.name}. Please select the file again.`));
+  reader.readAsDataURL(file);
+});
 
 export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   isOpen,
@@ -73,11 +87,11 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   // Step 4: College/University Template Support
   const [hasCollegeTemplate, setHasCollegeTemplate] = useState<boolean>(initialTemplateMode);
-  const [collegeTemplateFile, setCollegeTemplateFile] = useState<OrderAttachment | null>(null);
+  const [collegeTemplateFile, setCollegeTemplateFile] = useState<PendingOrderAttachment | null>(null);
   const [templateInstructions, setTemplateInstructions] = useState('');
 
   // Step 5: Reference Material (Separate from template)
-  const [referenceFiles, setReferenceFiles] = useState<OrderAttachment[]>([]);
+  const [referenceFiles, setReferenceFiles] = useState<PendingOrderAttachment[]>([]);
 
   // Step 7 & 8: Pricing & Payment
   const [couponCode, setCouponCode] = useState('');
@@ -175,12 +189,24 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const handleTemplateFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
+      if (file.size > MAX_ORDER_FILE_BYTES) {
+        setStepError('Each attachment must be 5 MB or smaller.');
+        e.target.value = '';
+        return;
+      }
+      const otherBytes = referenceFiles.reduce((sum, item) => sum + item.file.size, 0);
+      if (otherBytes + file.size > MAX_ORDER_UPLOAD_BYTES) {
+        setStepError('The total attachment size for one order cannot exceed 8 MB.');
+        e.target.value = '';
+        return;
+      }
       setCollegeTemplateFile({
         id: `tmpl-${Date.now()}`,
         name: file.name,
         size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
         type: file.type || 'application/octet-stream',
-        uploadedAt: 'Just now'
+        uploadedAt: 'Just now',
+        file,
       });
       setStepError('');
     }
@@ -189,14 +215,33 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const handleReferenceFilesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files: File[] = Array.from(e.target.files);
-      const newAtts: OrderAttachment[] = files.map((file, idx) => ({
+      if (referenceFiles.length + files.length > 10) {
+        setStepError('You can attach up to 10 reference files per order.');
+        e.target.value = '';
+        return;
+      }
+      if (files.some((file) => file.size > MAX_ORDER_FILE_BYTES)) {
+        setStepError('Each attachment must be 5 MB or smaller.');
+        e.target.value = '';
+        return;
+      }
+      const existingBytes = (collegeTemplateFile?.file.size || 0) + referenceFiles.reduce((sum, item) => sum + item.file.size, 0);
+      const incomingBytes = files.reduce((sum, file) => sum + file.size, 0);
+      if (existingBytes + incomingBytes > MAX_ORDER_UPLOAD_BYTES) {
+        setStepError('The total attachment size for one order cannot exceed 8 MB.');
+        e.target.value = '';
+        return;
+      }
+      const newAtts: PendingOrderAttachment[] = files.map((file, idx) => ({
         id: `att-${Date.now()}-${idx}`,
         name: file.name,
         size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        type: file.type || 'document',
-        uploadedAt: 'Just now'
+        type: file.type || 'application/octet-stream',
+        uploadedAt: 'Just now',
+        file,
       }));
       setReferenceFiles([...referenceFiles, ...newAtts]);
+      setStepError('');
     }
   };
 
@@ -287,9 +332,9 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       deadline,
       instructions: requirements.trim(),
       hasCollegeTemplate,
-      collegeTemplateFile: hasCollegeTemplate ? (collegeTemplateFile || undefined) : undefined,
+      collegeTemplateFile: hasCollegeTemplate && collegeTemplateFile ? { id: collegeTemplateFile.id, name: collegeTemplateFile.name, size: collegeTemplateFile.size, type: collegeTemplateFile.type, uploadedAt: collegeTemplateFile.uploadedAt } : undefined,
       templateInstructions: hasCollegeTemplate ? templateInstructions : undefined,
-      referenceFiles,
+      referenceFiles: referenceFiles.map(({ file, ...attachment }) => attachment),
       subtotal: calculatedSubtotal,
       finalPrice: finalTotal,
       discount: appliedDiscount,
@@ -313,7 +358,21 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     };
 
     try {
-      const savedOrder = await onOrderCreated(newOrder);
+      const pendingUploads = [
+        ...(hasCollegeTemplate && collegeTemplateFile
+          ? [{ attachment: collegeTemplateFile, category: 'college-template' as const }]
+          : []),
+        ...referenceFiles.map((attachment) => ({ attachment, category: 'reference' as const })),
+      ];
+      const uploadFiles: OrderFileUploadPayload[] = await Promise.all(
+        pendingUploads.map(async ({ attachment, category }) => ({
+          fileId: attachment.id,
+          category,
+          fileName: attachment.name,
+          dataUrl: await readFileAsDataUrl(attachment.file),
+        })),
+      );
+      const savedOrder = await onOrderCreated(newOrder, uploadFiles);
       setCreatedOrderSummary(savedOrder);
       setOrderCompletedSuccess(true);
     } catch (error: any) {
@@ -739,7 +798,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                             {collegeTemplateFile ? 'Replace Template File' : 'Click to upload your College Template'}
                           </span>
                           <span className="text-[11px] text-[#858585] mt-0.5">
-                            PDF, DOCX, PPTX, JPG, PNG (up to 25MB)
+                            PDF, DOCX, PPTX, JPG, PNG (5 MB per file; 8 MB total per order)
                           </span>
                           <input
                             type="file"
@@ -813,7 +872,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                         Click to upload reference material or notes
                       </span>
                       <span className="text-[11px] text-[#858585] mt-0.5">
-                        PDF, DOCX, PPTX, ZIP, TXT, CSV (up to 50MB)
+                        PDF, DOCX, PPTX, DOC, ZIP, TXT, CSV (5 MB per file; 8 MB total per order)
                       </span>
                       <input
                         type="file"

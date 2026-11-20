@@ -72,7 +72,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   // Deliverable upload
   const [newDeliverableTitle, setNewDeliverableTitle] = useState('');
   const [newDeliverableType, setNewDeliverableType] = useState('PDF');
-  const [newDeliverableSize, setNewDeliverableSize] = useState('2.5 MB');
+  const [newDeliverableFile, setNewDeliverableFile] = useState<File | null>(null);
 
   // Admin notes
   const [adminNoteInput, setAdminNoteInput] = useState('');
@@ -221,20 +221,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
   const handleUploadDeliverable = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeOrder || !newDeliverableTitle.trim()) {
-      triggerToast('Please provide deliverable title.');
+    if (!activeOrder || !newDeliverableTitle.trim() || !newDeliverableFile) {
+      triggerToast('Please provide a title and select the actual deliverable file.');
+      return;
+    }
+    if (newDeliverableFile.size > 5 * 1024 * 1024) {
+      triggerToast('Deliverable files must be 5 MB or smaller.');
+      return;
+    }
+    const selectedExtension = newDeliverableFile.name.split('.').pop()?.toUpperCase();
+    if (selectedExtension !== newDeliverableType) {
+      triggerToast(`The selected file is .${selectedExtension || 'unknown'}, but the file type selector is set to ${newDeliverableType}.`);
       return;
     }
     try {
       const res = await api.uploadDeliverable(activeOrder.id, {
         title: newDeliverableTitle.trim(),
-        fileType: newDeliverableType,
-        fileSize: newDeliverableSize,
-        downloadUrl: '#',
+        file: newDeliverableFile,
       });
       setOrders((prev) => prev.map((o) => (o.id === activeOrder.id ? res.order : o)));
+      const refreshedFiles = await api.getAdminFiles().catch(() => null);
+      if (refreshedFiles) setFiles(refreshedFiles.files || []);
       setNewDeliverableTitle('');
-      triggerToast('Completed deliverable uploaded and order marked Completed!');
+      setNewDeliverableFile(null);
+      triggerToast('Deliverable securely uploaded and order marked Completed!');
     } catch (err: any) {
       triggerToast(err.message || 'Failed to upload deliverable.');
     }
@@ -767,9 +777,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         </div>
                       </div>
 
+                      <div className="space-y-1.5">
+                        <input
+                          type="file"
+                          accept=".pdf,.pptx,.docx,.zip"
+                          onChange={(e) => setNewDeliverableFile(e.target.files?.[0] || null)}
+                          className="block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-zinc-700"
+                        />
+                        <p className="text-[10px] text-zinc-500">
+                          {newDeliverableFile ? `Selected: ${newDeliverableFile.name} (${(newDeliverableFile.size / (1024 * 1024)).toFixed(2)} MB)` : 'Select the actual PDF, PPTX, DOCX or ZIP file (maximum 5 MB).'}
+                        </p>
+                      </div>
+
                       <button
                         type="submit"
-                        className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                        disabled={!newDeliverableFile}
+                        className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
                       >
                         <FileCheck className="w-3.5 h-3.5" /> Upload & Mark Order Completed
                       </button>
@@ -985,13 +1008,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <td className="py-3 text-zinc-400">{f.size}</td>
                       <td className="py-3 text-zinc-500">{f.uploadedAt}</td>
                       <td className="py-3 text-right">
-                        <a
-                          href={f.downloadUrl || f.previewUrl || '#'}
-                          download
-                          className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs border border-zinc-700 inline-flex items-center gap-1"
-                        >
-                          <Eye className="w-3 h-3" /> View / Download
-                        </a>
+                        {(f.downloadUrl || f.previewUrl) ? (
+                          <a
+                            href={f.downloadUrl || f.previewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download
+                            className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs border border-zinc-700 inline-flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" /> View / Download
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-zinc-500">Legacy record — file not stored</span>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -18,7 +18,7 @@ import { CustomerAuthModal } from './components/CustomerAuthModal';
 import { CustomerPortal } from './components/CustomerPortal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { CamporaOrder } from './types';
+import { CamporaOrder, OrderFileUploadPayload } from './types';
 import { api } from './services/api';
 import { CheckCircle2, MessageCircle, Mail, Phone, Clock, MapPin } from 'lucide-react';
 
@@ -144,12 +144,12 @@ function AppContent() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleOrderCreated = async (newOrder: CamporaOrder): Promise<CamporaOrder> => {
+  const handleOrderCreated = async (newOrder: CamporaOrder, uploadFiles: OrderFileUploadPayload[] = []): Promise<CamporaOrder> => {
     const res = await api.createOrder({
       ...newOrder,
       customerId: user?.id,
       customerEmail: user?.email,
-    });
+    }, uploadFiles);
     setOrders((previous) => [res.order, ...previous]);
     setSelectedOrderId(res.order.id);
     setCurrentTab('customer-portal');

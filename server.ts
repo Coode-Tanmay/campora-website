@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { INITIAL_ORDERS, SERVICES_DATA } from './src/data/mockData';
-import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from './src/types';
+import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep, OrderAttachment } from './src/types';
 
 dotenv.config();
 
@@ -49,7 +49,18 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   next();
 });
-app.use(express.json({ limit: '2mb' }));
+const standardJsonParser = express.json({ limit: '2mb' });
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const isLargeFileUpload = req.method === 'POST' && (
+    req.path === '/api/customer/orders'
+    || /^\/api\/admin\/orders\/[^/]+\/deliverables$/.test(req.path)
+  );
+  if (isLargeFileUpload) {
+    next();
+    return;
+  }
+  standardJsonParser(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 
@@ -113,6 +124,145 @@ async function persistState(): Promise<void> {
     if (error) throw new Error(`Unable to save CAMPORA data to Supabase: ${error.message}`);
   });
   await stateWriteQueue;
+}
+
+
+const PRIVATE_FILES_BUCKET = 'campora-private';
+const MAX_PRIVATE_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_ORDER_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.zip': 'application/zip',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+};
+
+function parsePrivateUpload(dataUrl: unknown, fileName: unknown): { buffer: Buffer; mimeType: string } {
+  if (typeof dataUrl !== 'string' || typeof fileName !== 'string' || !fileName.trim()) {
+    throw new Error('A valid file name and file content are required.');
+  }
+
+  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
+  if (!match) throw new Error('The selected file could not be read. Please choose it again.');
+
+  const extension = path.extname(fileName).toLowerCase();
+  const expectedMimeType = MIME_BY_EXTENSION[extension];
+  const declaredMimeType = match[1].toLowerCase()
+    .replace('image/jpg', 'image/jpeg')
+    .replace('application/x-zip-compressed', 'application/zip');
+  if (!expectedMimeType || !['application/octet-stream', expectedMimeType].includes(declaredMimeType)) {
+    throw new Error('Unsupported file type. Please upload a supported PDF, Office document, ZIP, JPG or PNG file.');
+  }
+
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length === 0 || buffer.length > MAX_PRIVATE_FILE_BYTES) {
+    throw new Error('Each file must be 5 MB or smaller.');
+  }
+
+  if (expectedMimeType === 'application/pdf' && buffer.subarray(0, 5).toString() !== '%PDF-') {
+    throw new Error('The selected PDF file appears to be invalid.');
+  }
+  if (expectedMimeType === 'image/png' && !buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    throw new Error('The selected PNG file appears to be invalid.');
+  }
+  if (expectedMimeType === 'image/jpeg' && !(buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)) {
+    throw new Error('The selected JPG file appears to be invalid.');
+  }
+  if (['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'].includes(expectedMimeType)
+    && !(buffer[0] === 0x50 && buffer[1] === 0x4b)) {
+    throw new Error('The selected Office or ZIP file appears to be invalid.');
+  }
+
+  return { buffer, mimeType: expectedMimeType };
+}
+
+async function uploadPrivateFile(
+  orderId: string,
+  category: string,
+  fileName: string,
+  file: { buffer: Buffer; mimeType: string },
+): Promise<string> {
+  const safeName = fileName.replace(/[^a-zA-Z0-9._()-]/g, '_').slice(0, 100) || 'attachment';
+  const storagePath = `orders/${orderId}/${category}/${randomBytes(16).toString('hex')}-${safeName}`;
+  const { error } = await supabase.storage.from(PRIVATE_FILES_BUCKET).upload(storagePath, file.buffer, {
+    contentType: file.mimeType,
+    upsert: false,
+  });
+  if (error) {
+    console.error('CAMPORA private file upload failed:', error.message);
+    throw new Error('Secure file storage is temporarily unavailable. Please try again.');
+  }
+  return storagePath;
+}
+
+async function removePrivateFiles(paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  const { error } = await supabase.storage.from(PRIVATE_FILES_BUCKET).remove(paths);
+  if (error) console.error('CAMPORA temporary file cleanup failed:', error.message);
+}
+
+async function createPrivateFileUrl(storagePath: string, download = false): Promise<string | undefined> {
+  const { data, error } = await supabase.storage.from(PRIVATE_FILES_BUCKET).createSignedUrl(
+    storagePath,
+    60 * 60,
+    download ? { download: true } : undefined,
+  );
+  if (error || !data?.signedUrl) {
+    console.error('CAMPORA signed file URL could not be created:', error?.message || 'No URL returned');
+    return undefined;
+  }
+  return data.signedUrl;
+}
+
+async function hydrateOrderForResponse(order: CamporaOrder): Promise<CamporaOrder> {
+  const hydrated: CamporaOrder = { ...order };
+
+  if (order.collegeTemplateFile) {
+    const { storagePath, dataUrl, ...attachment } = order.collegeTemplateFile;
+    hydrated.collegeTemplateFile = {
+      ...attachment,
+      downloadUrl: storagePath ? await createPrivateFileUrl(storagePath, true) : undefined,
+    };
+  }
+
+  hydrated.referenceFiles = await Promise.all((order.referenceFiles || []).map(async (file) => {
+    const { storagePath, dataUrl, ...attachment } = file;
+    return {
+      ...attachment,
+      downloadUrl: storagePath ? await createPrivateFileUrl(storagePath, true) : undefined,
+    };
+  }));
+
+  if (order.paymentDetails) {
+    const { screenshotPath, ...paymentDetails } = order.paymentDetails;
+    hydrated.paymentDetails = {
+      ...paymentDetails,
+      screenshotUrl: screenshotPath
+        ? await createPrivateFileUrl(screenshotPath)
+        : paymentDetails.screenshotUrl,
+    };
+  }
+
+  if (order.deliverables) {
+    hydrated.deliverables = await Promise.all(order.deliverables.map(async (deliverable) => {
+      const { storagePath, ...file } = deliverable;
+      return {
+        ...file,
+        downloadUrl: storagePath ? await createPrivateFileUrl(storagePath, true) : undefined,
+      };
+    }));
+  }
+
+  return hydrated;
 }
 
 // Helper: Extract & Verify JWT
@@ -803,23 +953,23 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
 // ==========================================
 
 // Get authenticated customer's own orders ONLY
-app.get('/api/customer/orders', requireAuth, (req: RequestWithUser, res: Response) => {
+app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
-  
-  // Filter exclusively for this customer
-  const userOrders = ordersStore
+
+  // Filter exclusively for this customer and mint short-lived URLs for private files.
+  const userOrders = await Promise.all(ordersStore
     .filter((o) => o.customerId === user.id || o.customerEmail.toLowerCase() === user.email.toLowerCase())
-    .map((o) => {
-      // Strip private admin notes before returning to customer
-      const { adminNotes, ...customerSafeOrder } = o;
+    .map(async (order) => {
+      const hydrated = await hydrateOrderForResponse(order);
+      const { adminNotes, ...customerSafeOrder } = hydrated;
       return customerSafeOrder;
-    });
+    }));
 
   res.json({ orders: userOrders });
 });
 
 // Get single order with strict ownership authorization
-app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Response) => {
+app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderId = req.params.id;
 
@@ -836,12 +986,13 @@ app.get('/api/customer/orders/:id', requireAuth, (req: RequestWithUser, res: Res
     return;
   }
 
-  const { adminNotes, ...customerSafeOrder } = order;
-  res.json({ order: user.role === 'admin' ? order : customerSafeOrder });
+  const hydratedOrder = await hydrateOrderForResponse(order);
+  const { adminNotes, ...customerSafeOrder } = hydratedOrder;
+  res.json({ order: user.role === 'admin' ? hydratedOrder : customerSafeOrder });
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
-app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders', requireAuth, express.json({ limit: '12mb' }), async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   if (user.role !== 'customer') {
     res.status(403).json({ error: 'Only customer accounts can place orders.' });
@@ -940,9 +1091,59 @@ app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: 
     deliverables: [],
   };
 
-  ordersStore.unshift(newOrder);
-  await persistState();
-  res.status(201).json({ success: true, order: newOrder });
+  const uploadFiles = Array.isArray(data.uploadFiles) ? data.uploadFiles : [];
+  if (uploadFiles.length > 11) {
+    res.status(400).json({ error: 'You can upload one template and up to 10 reference files per order.' });
+    return;
+  }
+
+  const uploadedPaths: string[] = [];
+  let totalUploadBytes = 0;
+  let insertedOrder = false;
+  try {
+    const seenFileIds = new Set<string>();
+    for (const upload of uploadFiles) {
+      if (!upload || typeof upload.fileId !== 'string' || typeof upload.category !== 'string') {
+        throw new Error('An attachment is missing required information.');
+      }
+      if (seenFileIds.has(upload.fileId)) throw new Error('Duplicate attachment selected.');
+      seenFileIds.add(upload.fileId);
+
+      const targetAttachment: OrderAttachment | undefined = upload.category === 'college-template'
+        ? newOrder.collegeTemplateFile
+        : upload.category === 'reference'
+          ? newOrder.referenceFiles.find((file) => file.id === upload.fileId)
+          : undefined;
+      if (!targetAttachment || targetAttachment.id !== upload.fileId) {
+        throw new Error('An attachment does not match this order. Please refresh and try again.');
+      }
+
+      const parsedFile = parsePrivateUpload(upload.dataUrl, upload.fileName);
+      totalUploadBytes += parsedFile.buffer.length;
+      if (totalUploadBytes > MAX_ORDER_UPLOAD_BYTES) {
+        throw new Error('The total attachment size for one order cannot exceed 8 MB.');
+      }
+
+      const storagePath = await uploadPrivateFile(newOrder.id, upload.category, upload.fileName, parsedFile);
+      uploadedPaths.push(storagePath);
+      targetAttachment.storagePath = storagePath;
+      targetAttachment.type = parsedFile.mimeType;
+      targetAttachment.size = `${(parsedFile.buffer.length / (1024 * 1024)).toFixed(2)} MB`;
+      targetAttachment.uploadedAt = now;
+    }
+
+    ordersStore.unshift(newOrder);
+    insertedOrder = true;
+    await persistState();
+    const responseOrder = await hydrateOrderForResponse(newOrder);
+    res.status(201).json({ success: true, order: responseOrder });
+  } catch (error) {
+    if (insertedOrder && ordersStore[0]?.id === newOrder.id) ordersStore.shift();
+    await removePrivateFiles(uploadedPaths);
+    res.status(400).json({
+      error: error instanceof Error ? error.message : 'The order could not be saved. Please try again.',
+    });
+  }
 });
 
 // Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
@@ -978,13 +1179,24 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     return;
   }
 
-  let safeScreenshotUrl: string | undefined;
+  let safeScreenshotPath: string | undefined;
+  let screenshotBytes = 0;
   if (typeof screenshotUrl === 'string' && screenshotUrl.trim()) {
     if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(screenshotUrl) || screenshotUrl.length > 700000) {
       res.status(400).json({ error: 'Payment screenshot must be a PNG or JPG image under 500 KB.' });
       return;
     }
-    safeScreenshotUrl = screenshotUrl;
+    try {
+      const parsedScreenshot = parsePrivateUpload(screenshotUrl, typeof screenshotName === 'string' ? screenshotName : 'Payment_Proof.png');
+      if (!['image/png', 'image/jpeg'].includes(parsedScreenshot.mimeType)) {
+        throw new Error('Payment proof must be a PNG or JPG image.');
+      }
+      screenshotBytes = parsedScreenshot.buffer.length;
+      safeScreenshotPath = await uploadPrivateFile(order.id, 'payment-proof', typeof screenshotName === 'string' ? screenshotName : 'Payment_Proof.png', parsedScreenshot);
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'Payment screenshot upload failed.' });
+      return;
+    }
   }
 
   const payableAmount = order.finalPrice ?? order.total;
@@ -1002,6 +1214,7 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     return step;
   });
 
+  const previousScreenshotPath = order.paymentDetails?.screenshotPath;
   const updatedOrder: CamporaOrder = {
     ...order,
     paymentStatus: 'verification_pending',
@@ -1009,9 +1222,11 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
       utrNumber: cleanUtr,
-      screenshotUrl: safeScreenshotUrl,
-      screenshotName: safeScreenshotUrl ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
-      screenshotSize: safeScreenshotUrl && typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : undefined,
+      screenshotPath: safeScreenshotPath,
+      screenshotName: safeScreenshotPath ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
+      screenshotSize: safeScreenshotPath
+        ? (typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : `${(screenshotBytes / 1024).toFixed(1)} KB`)
+        : undefined,
       submittedAt: now,
       amountPaid: payableAmount,
     },
@@ -1020,9 +1235,20 @@ app.post('/api/customer/orders/:id/payment', requireAuth, async (req: RequestWit
   };
 
   ordersStore[orderIndex] = updatedOrder;
-  await persistState();
+  try {
+    await persistState();
+  } catch {
+    ordersStore[orderIndex] = order;
+    await removePrivateFiles(safeScreenshotPath ? [safeScreenshotPath] : []);
+    res.status(500).json({ error: 'Payment proof could not be saved. Please try again.' });
+    return;
+  }
+  if (previousScreenshotPath && previousScreenshotPath !== safeScreenshotPath) {
+    await removePrivateFiles([previousScreenshotPath]);
+  }
 
-  const { adminNotes, ...customerSafeOrder } = updatedOrder;
+  const hydratedOrder = await hydrateOrderForResponse(updatedOrder);
+  const { adminNotes, ...customerSafeOrder } = hydratedOrder;
   res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
 });
 
@@ -1053,7 +1279,7 @@ app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Respon
 // ==========================================
 
 // Dashboard Overview Metrics
-app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/overview', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const totalOrders = ordersStore.length;
   const newOrders = ordersStore.filter((o) => o.status === 'new_order').length;
   const pendingApproval = ordersStore.filter((o) => o.status === 'new_order' || o.status === 'under_review' || o.status === 'requirements_review').length;
@@ -1076,12 +1302,12 @@ app.get('/api/admin/overview', requireAdmin, (_req: RequestWithUser, res: Respon
       cancelledOrders,
       totalRevenue,
     },
-    recentOrders: ordersStore.slice(0, 10),
+    recentOrders: await Promise.all(ordersStore.slice(0, 10).map(hydrateOrderForResponse)),
   });
 });
 
 // Admin All Orders with query filters
-app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response) => {
+app.get('/api/admin/orders', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const { status, paymentStatus, search, sort } = req.query as {
     status?: string;
     paymentStatus?: string;
@@ -1116,7 +1342,8 @@ app.get('/api/admin/orders', requireAdmin, (req: RequestWithUser, res: Response)
     filtered.reverse();
   }
 
-  res.json({ orders: filtered, total: filtered.length });
+  const hydratedOrders = await Promise.all(filtered.map(hydrateOrderForResponse));
+  res.json({ orders: hydratedOrders, total: filtered.length });
 });
 
 // Admin Order Status Update (Approve, Reject, Cancel, In Progress, Review, Completed)
@@ -1189,7 +1416,7 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
-  res.json({ success: true, order: updatedOrder });
+  res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
 });
 
 // Admin Payment Verification (Confirm or Reject)
@@ -1252,7 +1479,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     ordersStore[orderIndex] = updatedOrder;
     await persistState();
-    res.json({ success: true, message: `Payment verified for ₹${payableAmount}. Order is now in progress.`, order: updatedOrder });
+    res.json({ success: true, message: `Payment verified for ₹${payableAmount}. Order is now in progress.`, order: await hydrateOrderForResponse(updatedOrder) });
     return;
   }
 
@@ -1288,7 +1515,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     ordersStore[orderIndex] = updatedOrder;
     await persistState();
-    res.json({ success: true, message: 'Payment marked as rejected.', order: updatedOrder });
+    res.json({ success: true, message: 'Payment marked as rejected.', order: await hydrateOrderForResponse(updatedOrder) });
     return;
   }
 
@@ -1296,9 +1523,9 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 });
 
 // Admin Upload Completed Deliverable
-app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: RequestWithUser, res: Response) => {
+app.post('/api/admin/orders/:id/deliverables', requireAdmin, express.json({ limit: '8mb' }), async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
-  const { title, fileType, fileSize, downloadUrl } = req.body;
+  const { title, fileName, dataUrl } = req.body || {};
 
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
   if (orderIndex === -1) {
@@ -1306,19 +1533,33 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
     return;
   }
 
-  const order = ordersStore[orderIndex];
+  if (typeof fileName !== 'string' || typeof dataUrl !== 'string') {
+    res.status(400).json({ error: 'Select the actual deliverable file before uploading.' });
+    return;
+  }
 
+  const order = ordersStore[orderIndex];
+  let parsedFile: { buffer: Buffer; mimeType: string };
+  let storagePath: string;
+  try {
+    parsedFile = parsePrivateUpload(dataUrl, fileName);
+    storagePath = await uploadPrivateFile(order.id, 'deliverables', fileName, parsedFile);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Deliverable upload failed.' });
+    return;
+  }
+
+  const extension = path.extname(fileName).slice(1).toUpperCase();
   const newDeliverable: DeliverableFile = {
     id: `del-${Date.now()}`,
-    title: title?.trim() || `${order.serviceName.replace(/\s+/g, '_')}_Final_Deliverable.${fileType?.toLowerCase() || 'pdf'}`,
-    fileType: (fileType || 'PDF').toUpperCase(),
-    fileSize: fileSize || '2.4 MB',
-    uploadedAt: 'Today, Just now',
-    downloadUrl: downloadUrl || '#',
+    title: typeof title === 'string' && title.trim() ? title.trim().slice(0, 180) : fileName,
+    fileType: extension,
+    fileSize: `${(parsedFile.buffer.length / (1024 * 1024)).toFixed(2)} MB`,
+    uploadedAt: new Date().toISOString(),
+    storagePath,
   };
 
   const updatedDeliverables = [...(order.deliverables || []), newDeliverable];
-
   const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
     if (step.id === 't5' || step.title.toLowerCase().includes('delivery') || step.title.toLowerCase().includes('completed')) {
       return {
@@ -1338,12 +1579,24 @@ app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: Request
     progressPercent: 100,
     deliverables: updatedDeliverables,
     timeline: updatedTimeline,
-    updatedAt: 'Just now',
+    updatedAt: new Date().toISOString(),
   };
 
   ordersStore[orderIndex] = updatedOrder;
-  await persistState();
-  res.json({ success: true, message: 'Completed deliverable uploaded successfully.', order: updatedOrder });
+  try {
+    await persistState();
+  } catch (error) {
+    ordersStore[orderIndex] = order;
+    await removePrivateFiles([storagePath]);
+    res.status(500).json({ error: 'The file was uploaded but the order could not be saved. Please retry.' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    message: 'Completed deliverable uploaded successfully.',
+    order: await hydrateOrderForResponse(updatedOrder),
+  });
 });
 
 // Admin Private Notes
@@ -1361,7 +1614,7 @@ app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUs
   ordersStore[orderIndex].updatedAt = new Date().toISOString();
   await persistState();
 
-  res.json({ success: true, order: ordersStore[orderIndex] });
+  res.json({ success: true, order: await hydrateOrderForResponse(ordersStore[orderIndex]) });
 });
 
 // Admin List All Customers
@@ -1402,10 +1655,11 @@ app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Respo
 });
 
 // Admin File Repository Aggregator
-app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response) => {
+app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const files: any[] = [];
+  const responseOrders = await Promise.all(ordersStore.map(hydrateOrderForResponse));
 
-  ordersStore.forEach((ord) => {
+  responseOrders.forEach((ord) => {
     if (ord.collegeTemplateFile) {
       files.push({
         id: ord.collegeTemplateFile.id,
@@ -1416,6 +1670,7 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
         fileType: ord.collegeTemplateFile.type,
         size: ord.collegeTemplateFile.size,
         uploadedAt: ord.collegeTemplateFile.uploadedAt || ord.createdAt,
+        downloadUrl: ord.collegeTemplateFile.downloadUrl,
       });
     }
 
@@ -1430,6 +1685,7 @@ app.get('/api/admin/files', requireAdmin, (_req: RequestWithUser, res: Response)
           fileType: rf.type,
           size: rf.size,
           uploadedAt: rf.uploadedAt || ord.createdAt,
+          downloadUrl: rf.downloadUrl,
         });
       });
     }

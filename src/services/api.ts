@@ -1,4 +1,4 @@
-import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus } from '../types';
+import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, OrderFileUploadPayload } from '../types';
 
 const API_BASE = '/api';
 
@@ -119,10 +119,10 @@ export const api = {
     return fetchJson<{ order: CamporaOrder }>(`${API_BASE}/customer/orders/${id}`);
   },
 
-  async createOrder(orderData: Partial<CamporaOrder>): Promise<{ success: boolean; order: CamporaOrder }> {
+  async createOrder(orderData: Partial<CamporaOrder>, uploadFiles: OrderFileUploadPayload[] = []): Promise<{ success: boolean; order: CamporaOrder }> {
     return fetchJson<{ success: boolean; order: CamporaOrder }>(`${API_BASE}/customer/orders`, {
       method: 'POST',
-      body: JSON.stringify(orderData),
+      body: JSON.stringify({ ...orderData, uploadFiles }),
     });
   },
 
@@ -167,10 +167,23 @@ export const api = {
     });
   },
 
-  async uploadDeliverable(orderId: string, deliverable: { title: string; fileType: string; fileSize: string; downloadUrl?: string }): Promise<{ success: boolean; order: CamporaOrder }> {
+  async uploadDeliverable(orderId: string, deliverable: { title: string; file: File }): Promise<{ success: boolean; order: CamporaOrder }> {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read the selected deliverable file.'));
+      reader.onload = () => typeof reader.result === 'string'
+        ? resolve(reader.result)
+        : reject(new Error('Could not read the selected deliverable file.'));
+      reader.readAsDataURL(deliverable.file);
+    });
+
     return fetchJson<{ success: boolean; order: CamporaOrder }>(`${API_BASE}/admin/orders/${orderId}/deliverables`, {
       method: 'POST',
-      body: JSON.stringify(deliverable),
+      body: JSON.stringify({
+        title: deliverable.title,
+        fileName: deliverable.file.name,
+        dataUrl,
+      }),
     });
   },
 
