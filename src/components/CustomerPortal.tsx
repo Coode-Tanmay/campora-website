@@ -98,19 +98,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
           } catch (error: any) {
             window.alert(error.message || 'We could not verify the payment yet. Your payment status will refresh when the gateway confirms it.');
             await fetchOrders();
+          } finally {
+            setStartingPaymentFor(null);
           }
         },
-        modal: { ondismiss: () => { fetchOrders(); } },
+        modal: { ondismiss: () => { setStartingPaymentFor(null); fetchOrders(); } },
       });
       checkout.on('payment.failed', (response: any) => {
+        setStartingPaymentFor(null);
         window.alert(response?.error?.description || 'Payment was not completed. You can retry from your order dashboard.');
         fetchOrders();
       });
       checkout.open();
     } catch (error: any) {
-      window.alert(error.message || 'Unable to start secure payment. Please try again.');
-    } finally {
       setStartingPaymentFor(null);
+      window.alert(error.message || 'Unable to start secure payment. Please try again.');
     }
   };
 
@@ -350,7 +352,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     <div className="flex items-center gap-2">
                       {ord.paymentStatus !== 'paid' && (
                         <>
-                          {razorpayEnabled && ord.status === 'approved' ? (
+                          {razorpayEnabled && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
                             <button
                               id={`btn-razorpay-${ord.id}`}
                               disabled={startingPaymentFor === ord.id}
