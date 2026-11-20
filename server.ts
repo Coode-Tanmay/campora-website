@@ -448,6 +448,17 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
+// JSON embedded in an HTML script element must escape HTML-significant characters;
+// otherwise a provider-controlled profile name or OAuth error could terminate the script.
+function serializeForInlineScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 function getRequestOrigin(_req: Request): string {
   const configuredUrl = process.env.APP_URL?.trim();
   if (configuredUrl && configuredUrl !== 'MY_APP_URL') {
@@ -630,7 +641,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorDesc)} }, window.location.origin);
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${serializeForInlineScript(errorDesc)} }, window.location.origin);
               setTimeout(() => { window.close(); }, 800);
             } else {
               setTimeout(() => { window.location.href = '/login'; }, 1500);
@@ -758,7 +769,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
             </div>
           </div>
           <script>
-            const authPayload = ${JSON.stringify({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload })};
+            const authPayload = ${serializeForInlineScript({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload })};
             if (window.opener) {
               window.opener.postMessage(authPayload, window.location.origin);
               setTimeout(() => { window.close(); }, 500);
@@ -782,7 +793,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(err.message || 'Google OAuth verification failed.')} }, window.location.origin);
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${serializeForInlineScript(err.message || 'Google OAuth verification failed.')} }, window.location.origin);
               setTimeout(() => { window.close(); }, 2500);
             } else {
               setTimeout(() => { window.location.href = '/dashboard'; }, 3000);
@@ -809,7 +820,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(errorDesc)} }, window.location.origin);
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${serializeForInlineScript(errorDesc)} }, window.location.origin);
               setTimeout(() => { window.close(); }, 800);
             } else {
               setTimeout(() => { window.location.href = '/login'; }, 1500);
@@ -912,7 +923,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
             <p style="color:#a1a1aa;font-size:13px;margin:0 0 20px 0;">Signed in via Microsoft (${escapeHtml(customerPayload.email)})</p>
           </div>
           <script>
-            const authPayload = ${JSON.stringify({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload })};
+            const authPayload = ${serializeForInlineScript({ type: 'OAUTH_AUTH_SUCCESS', user: customerPayload })};
             if (window.opener) {
               window.opener.postMessage(authPayload, window.location.origin);
               setTimeout(() => { window.close(); }, 500);
@@ -935,7 +946,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
           </div>
           <script>
             if (window.opener) {
-              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${JSON.stringify(err.message || 'Microsoft OAuth verification failed.')} }, window.location.origin);
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: ${serializeForInlineScript(err.message || 'Microsoft OAuth verification failed.')} }, window.location.origin);
               setTimeout(() => { window.close(); }, 2500);
             }
           </script>
