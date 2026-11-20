@@ -49,7 +49,18 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   next();
 });
-app.use(express.json({ limit: '12mb' }));
+const standardJsonParser = express.json({ limit: '2mb' });
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const isLargeFileUpload = req.method === 'POST' && (
+    req.path === '/api/customer/orders'
+    || /^\/api\/admin\/orders\/[^/]+\/deliverables$/.test(req.path)
+  );
+  if (isLargeFileUpload) {
+    next();
+    return;
+  }
+  standardJsonParser(req, res, next);
+});
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 
@@ -979,7 +990,7 @@ app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, re
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
-app.post('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: Response) => {
+app.post('/api/customer/orders', requireAuth, express.json({ limit: '12mb' }), async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   if (user.role !== 'customer') {
     res.status(403).json({ error: 'Only customer accounts can place orders.' });
@@ -1510,7 +1521,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 });
 
 // Admin Upload Completed Deliverable
-app.post('/api/admin/orders/:id/deliverables', requireAdmin, async (req: RequestWithUser, res: Response) => {
+app.post('/api/admin/orders/:id/deliverables', requireAdmin, express.json({ limit: '8mb' }), async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { title, fileName, dataUrl } = req.body || {};
 
