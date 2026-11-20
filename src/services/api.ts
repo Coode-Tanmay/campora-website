@@ -133,6 +133,18 @@ export const api = {
     });
   },
 
+  async getRazorpayConfig(): Promise<{ enabled: boolean; keyId: string | null; currency: 'INR' }> {
+    return fetchJson<{ enabled: boolean; keyId: string | null; currency: 'INR' }>(`${API_BASE}/payments/razorpay/config`);
+  },
+
+  async createRazorpayOrder(orderId: string): Promise<{ keyId: string; orderId: string; amount: number; currency: 'INR'; camporaOrderId: string }> {
+    return fetchJson<{ keyId: string; orderId: string; amount: number; currency: 'INR'; camporaOrderId: string }>(`${API_BASE}/customer/orders/${encodeURIComponent(orderId)}/razorpay/order`, { method: 'POST', body: JSON.stringify({}) });
+  },
+
+  async verifyRazorpayPayment(orderId: string, response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }): Promise<{ success: boolean; pending?: boolean; message: string; order?: CamporaOrder }> {
+    return fetchJson<{ success: boolean; pending?: boolean; message: string; order?: CamporaOrder }>(`${API_BASE}/customer/orders/${encodeURIComponent(orderId)}/razorpay/verify`, { method: 'POST', body: JSON.stringify(response) });
+  },
+
   async getCustomerProfile(): Promise<{ user: AuthUser; stats: any }> {
     return fetchJson<{ user: AuthUser; stats: any }>(`${API_BASE}/customer/profile`);
   },
