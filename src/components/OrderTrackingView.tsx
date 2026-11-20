@@ -29,6 +29,7 @@ import {
 import { UpiPaymentCard, UPI_ID } from './UpiPaymentCard';
 import { PaymentVerificationModal } from './PaymentVerificationModal';
 import { ScreenshotPreviewModal } from './ScreenshotPreviewModal';
+import { api } from '../services/api';
 
 interface OrderTrackingViewProps {
   orders: CamporaOrder[];
@@ -67,36 +68,19 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
     }
   };
 
-  const handlePaymentSubmitted = (utrNumber: string, screenshotUrl: string, screenshotName: string) => {
-    if (!activeOrder || !onUpdateOrderStatus) return;
+  const handlePaymentSubmitted = async (utrNumber: string, screenshotUrl: string, screenshotName: string) => {
+    if (!activeOrder) {
+      throw new Error('Select an order before submitting payment proof.');
+    }
 
-    const amountPaid = activeOrder.finalPrice || activeOrder.total;
-    const updatedTimeline = activeOrder.timeline.map((step) => {
-      if (step.title.toLowerCase().includes('payment') || step.id === 't3' || step.id === 't4') {
-        return {
-          ...step,
-          title: 'Payment Verification Pending',
-          description: `UTR #${utrNumber} submitted for ₹${amountPaid}. CAMPORA admin is verifying receipt.`,
-          status: 'current' as const,
-          timestamp: 'Just now',
-        };
-      }
-      return step;
+    // Persist payment proof on the server before updating the customer UI.
+    const response = await api.submitPaymentProof(activeOrder.id, {
+      utrNumber,
+      screenshotUrl,
+      screenshotName,
     });
 
-    onUpdateOrderStatus(activeOrder.id, {
-      paymentStatus: 'verification_pending',
-      paymentDetails: {
-        upiId: UPI_ID,
-        utrNumber,
-        screenshotUrl,
-        screenshotName,
-        submittedAt: 'Today, Just now',
-        amountPaid,
-      },
-      timeline: updatedTimeline,
-      updatedAt: 'Just now',
-    });
+    onUpdateOrderStatus?.(activeOrder.id, response.order);
   };
 
   const filteredOrders = orders.filter((ord) => {
@@ -710,8 +694,8 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
           amount={payableAmount}
           orderId={activeOrder.id}
           serviceName={activeOrder.serviceName}
-          onConfirm={(utr, url, name) => {
-            handlePaymentSubmitted(utr, url, name);
+          onConfirm={async (utr, url, name) => {
+            await handlePaymentSubmitted(utr, url, name);
             setIsVerificationModalOpen(false);
           }}
         />
