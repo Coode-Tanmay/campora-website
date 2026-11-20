@@ -1181,7 +1181,7 @@ app.post('/api/customer/orders/:id/razorpay/order', razorpayPaymentLimiter, requ
   if (orderIndex === -1) { res.status(404).json({ error: 'Order not found.' }); return; }
   const order = ordersStore[orderIndex];
   if (req.user!.role !== 'customer' || order.customerId !== req.user!.id) { res.status(403).json({ error: 'You cannot pay for this order.' }); return; }
-  if (order.paymentStatus === 'paid' || ['cancelled', 'rejected', 'completed'].includes(order.status) || order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review') { res.status(409).json({ error: 'This order is not currently eligible for payment.' }); return; }
+  if (order.paymentStatus === 'paid' || order.paymentStatus === 'verification_pending' || ['cancelled', 'rejected', 'completed'].includes(order.status) || order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review') { res.status(409).json({ error: 'This order is not currently eligible for payment.' }); return; }
   if (order.status !== 'approved' && order.status !== 'payment_pending' && order.quoteStatus !== 'accepted') { res.status(409).json({ error: 'Your order must be approved and priced before payment.' }); return; }
   const payableRupees = order.finalPrice ?? order.total; const payablePaise = Math.round(payableRupees * 100);
   if (!Number.isSafeInteger(payablePaise) || payablePaise <= 0) { res.status(400).json({ error: 'The payable amount is invalid.' }); return; }
@@ -1419,12 +1419,12 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, a
   }
 
   const order = ordersStore[orderIndex];
-  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status === 'created') {
-    res.status(409).json({ error: 'A secure online checkout is already open for this order. Complete it or wait for the payment attempt to fail before using manual UPI.' });
-    return;
-  }
   if (user.role !== 'customer' || order.customerId !== user.id) {
     res.status(403).json({ error: 'You cannot submit payment for this order.' });
+    return;
+  }
+  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status === 'created') {
+    res.status(409).json({ error: 'A secure online checkout is already open for this order. Complete it or wait for the payment attempt to fail before using manual UPI.' });
     return;
   }
 
