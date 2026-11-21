@@ -1666,7 +1666,7 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
   }
 });
 
-// A customer may cancel an unpaid order from the payment screen. Orders with submitted proof or a confirmed payment require admin handling.
+// Customers may cancel any active order. Paid or payment-proof-submitted orders create a refund request for admin processing.
 app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === req.params.id.toLowerCase());
@@ -1680,21 +1680,28 @@ app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWith
     res.status(403).json({ error: 'You cannot cancel this order.' });
     return;
   }
-  if (order.paymentStatus === 'paid' || order.paymentStatus === 'verification_pending' || order.paymentStatus === 'awaiting_quote' || ['cancelled', 'completed', 'rejected'].includes(order.status)) {
-    res.status(409).json({ error: 'This order cannot be cancelled from the payment screen. Please contact CAMPORA support.' });
-    return;
-  }
-  if (order.paymentDetails?.utrNumber || order.paymentStatus !== 'pending') {
-    res.status(409).json({ error: 'Payment activity has already been submitted. Please contact CAMPORA support before cancelling.' });
+  if (['cancelled', 'completed', 'rejected'].includes(order.status)) {
+    res.status(409).json({ error: 'This order can no longer be cancelled.' });
     return;
   }
 
   const now = new Date().toISOString();
+  const refundRequired = order.paymentStatus === 'paid' || order.paymentStatus === 'verification_pending'
+    || Boolean(order.paymentDetails?.utrNumber || order.paymentDetails?.screenshotName);
   const updatedOrder: CamporaOrder = {
     ...order,
     status: 'cancelled',
-    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'customer_cancelled', description: 'Customer cancelled the order before submitting payment proof.', actor: user.name || 'Customer', timestamp: now }],
-    cancellationReason: 'Customer cancelled during payment.',
+    ...(refundRequired ? { refundStatus: 'requested' as const, refundRequestedAt: now } : {}),
+    activityHistory: [...(order.activityHistory || []), {
+      id: `act-${Date.now()}`,
+      action: refundRequired ? 'customer_cancelled_refund_requested' : 'customer_cancelled',
+      description: refundRequired
+        ? 'Customer cancelled the order after submitting payment details or payment; refund requested for admin processing to the original payment source.'
+        : 'Customer cancelled the order before payment was submitted; no refund is due.',
+      actor: user.name || 'Customer',
+      timestamp: now,
+    }],
+    cancellationReason: 'Customer requested order cancellation.',
     cancelledBy: 'Customer',
     cancelledAt: now,
     updatedAt: now,
