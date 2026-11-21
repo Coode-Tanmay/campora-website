@@ -314,6 +314,16 @@ async function createPrivateFileUrl(storagePath: string, download = false): Prom
   return data.signedUrl;
 }
 
+function toCustomerSafeOrder(order: CamporaOrder): CamporaOrder {
+  const { adminNotes, ...customerOrder } = order;
+  return {
+    ...customerOrder,
+    deliverables: customerOrder.paymentStatus === 'paid' && customerOrder.status === 'completed'
+      ? (customerOrder.deliverables || [])
+      : [],
+  };
+}
+
 async function hydrateOrderForResponse(order: CamporaOrder): Promise<CamporaOrder> {
   const hydrated: CamporaOrder = { ...order };
 
@@ -1377,8 +1387,7 @@ app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: R
     .filter((o) => o.customerId === user.id)
     .map(async (order) => {
       const hydrated = await hydrateOrderForResponse(order);
-      const { adminNotes, ...customerSafeOrder } = hydrated;
-      return customerSafeOrder;
+      return toCustomerSafeOrder(hydrated);
     }));
 
   res.json({ orders: userOrders });
@@ -1464,8 +1473,7 @@ app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, re
   }
 
   const hydratedOrder = await hydrateOrderForResponse(order);
-  const { adminNotes, ...customerSafeOrder } = hydratedOrder;
-  res.json({ order: user.role === 'admin' ? hydratedOrder : customerSafeOrder });
+  res.json({ order: user.role === 'admin' ? hydratedOrder : toCustomerSafeOrder(hydratedOrder) });
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
@@ -1751,8 +1759,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, e
   if (previousScreenshotPath && previousScreenshotPath !== screenshotPath) await removePrivateFiles([previousScreenshotPath]);
   void sendPaymentUpdateEmail(user.email, user.name, updatedOrder.id, 'received');
   const hydrated = await hydrateOrderForResponse(updatedOrder);
-  const { adminNotes, ...customerSafeOrder } = hydrated;
-  return res.json({ success: true, message: 'Screenshot submitted. Admin verification is pending.', order: customerSafeOrder });
+  return res.json({ success: true, message: 'Screenshot submitted. Admin verification is pending.', order: toCustomerSafeOrder(hydrated) });
 });
 
 // Customer profile & stats
