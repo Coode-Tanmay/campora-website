@@ -1533,8 +1533,7 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
 
   const isPackage = service.id === 'internship-package';
   const requiresReview = service.pricingType === 'variable'
-    || Boolean(service.maxIncludedPages && pagesOrSlides > service.maxIncludedPages)
-    || Boolean(data.hasCollegeTemplate);
+    || Boolean(service.maxIncludedPages && pagesOrSlides > service.maxIncludedPages);
 
   const subtotal = Number(service.price) || 0;
   const requestedCode = typeof data.couponCode === 'string' ? data.couponCode.trim().toUpperCase() : '';
