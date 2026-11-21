@@ -2129,6 +2129,7 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
     return;
   }
 
+  void sendDeliveryEmail(updatedOrder.customerEmail, updatedOrder.customerName, updatedOrder.id);
   res.json({
     success: true,
     message: 'Completed deliverable uploaded successfully.',
