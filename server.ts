@@ -185,7 +185,7 @@ async function persistState(): Promise<void> {
 
 
 const PRIVATE_FILES_BUCKET = 'campora-private';
-const MAX_PRIVATE_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_PRIVATE_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_ORDER_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -198,6 +198,14 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.txt': 'text/plain',
   '.csv': 'text/csv',
   '.zip': 'application/zip',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.doc': 'application/msword',
+  '.xls': 'application/vnd.ms-excel',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
@@ -234,7 +242,7 @@ function parsePrivateUpload(dataUrl: unknown, fileName: unknown): { buffer: Buff
   if (expectedMimeType === 'image/jpeg' && !(buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)) {
     throw new Error('The selected JPG file appears to be invalid.');
   }
-  if (['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'].includes(expectedMimeType)
+  if (['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip', 'application/vnd.ms-powerpoint', 'application/msword', 'application/vnd.ms-excel'].includes(expectedMimeType)
     && !(buffer[0] === 0x50 && buffer[1] === 0x4b)) {
     throw new Error('The selected Office or ZIP file appears to be invalid.');
   }
@@ -1924,8 +1932,8 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   const order = ordersStore[orderIndex];
-  if (action === 'confirm' && (order.paymentStatus !== 'verification_pending' || !order.paymentDetails?.utrNumber)) {
-    res.status(409).json({ error: 'A submitted payment reference must be verified before confirming payment.' });
+  if (action === 'confirm' && (order.paymentStatus !== 'verification_pending' || !order.paymentDetails?.screenshotPath)) {
+    res.status(409).json({ error: 'A submitted payment screenshot must be checked before confirming payment.' });
     return;
   }
   if (action === 'reject' && order.paymentStatus !== 'verification_pending') {
@@ -1943,7 +1951,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
         return {
           ...step,
           title: 'Payment Confirmed',
-          description: `₹${payableAmount} verified in SBI account (UTR: ${utr}).`,
+          description: order.paymentDetails?.utrNumber ? `₹${payableAmount} verified in bank records (UTR: ${utr}).` : `₹${payableAmount} manually verified against the payment screenshot and bank records.`,
           status: 'completed' as const,
           timestamp: now,
         };
@@ -1957,8 +1965,8 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
     const updatedOrder: CamporaOrder = {
       ...order,
       paymentStatus: 'paid',
-      status: 'in_progress',
-      progressPercent: Math.max(order.progressPercent, 50),
+      status: order.status,
+      progressPercent: order.progressPercent,
       paymentDetails: {
         ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }),
         upiId: 'tanmayvbhagat-1@oksbi',
@@ -2018,7 +2026,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 });
 
 // Admin Upload Completed Deliverable
-app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, requireAdmin, express.json({ limit: '8mb' }), async (req: RequestWithUser, res: Response) => {
+app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, requireAdmin, express.json({ limit: '22mb' }), async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
   const { title, fileName, dataUrl } = req.body || {};
 
