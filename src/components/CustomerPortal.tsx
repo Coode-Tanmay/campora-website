@@ -122,7 +122,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
     setTimeout(() => setCopiedReferral(false), 2000);
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, paymentStatus?: string) => {
+    if (paymentStatus === 'verification_pending') {
+      return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20"><CheckCircle2 className="w-3 h-3" /> Order Confirmed</span>;
+    }
     switch (status) {
       case 'completed':
         return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><CheckCircle2 className="w-3 h-3" /> Completed</span>;
@@ -307,7 +310,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                             Internship Package
                           </span>
                         )}
-                        {getStatusBadge(ord.status)}
+                        {getStatusBadge(ord.status, ord.paymentStatus)}
                       </div>
                       <p className="text-xs text-zinc-400">
                         <span className="font-medium text-zinc-300">Topic:</span> {ord.topic}
@@ -613,7 +616,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
               <span className="font-mono text-xs font-bold text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
                 {selectedOrder.id}
               </span>
-              {getStatusBadge(selectedOrder.status)}
+              {getStatusBadge(selectedOrder.status, selectedOrder.paymentStatus)}
             </div>
 
             <h2 className="text-xl font-bold text-white mb-1">{selectedOrder.serviceName}</h2>
