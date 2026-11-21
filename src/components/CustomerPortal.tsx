@@ -689,11 +689,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
 
             <ManualPaymentSection
               order={showPaymentModalFor}
-              onPaymentSubmitted={async (utr, screenshot) => {
+              onPaymentSubmitted={async (utr, screenshot, screenshotName) => {
                 await api.submitPaymentProof(showPaymentModalFor.id, {
                   utrNumber: utr,
                   screenshotUrl: screenshot,
-                  screenshotName: 'Receipt_Proof.png',
+                  screenshotName,
                 });
                 setShowPaymentModalFor(null);
                 fetchOrders();
