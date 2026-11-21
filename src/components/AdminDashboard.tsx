@@ -85,6 +85,9 @@ const UrgentDeadlineCountdown: React.FC<{ order: CamporaOrder }> = ({ order }) =
   );
 };
 
+const hasSubmittedPaymentScreenshot = (order: CamporaOrder): boolean =>
+  Boolean(order.paymentDetails?.screenshotUrl || order.paymentDetails?.screenshotName);
+
 interface AdminDashboardProps {
   onCloseAdmin: () => void;
 }
@@ -748,6 +751,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                     </div>
                   </div>
 
+                  <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800 space-y-2">
+                    <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Payment Submission</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <div className="text-[10px] uppercase font-bold text-zinc-500">Payment Proof</div>
+                        <div className={hasSubmittedPaymentScreenshot(activeOrder) ? 'text-emerald-300 font-semibold' : 'text-zinc-400 italic'}>
+                          {hasSubmittedPaymentScreenshot(activeOrder) ? 'Submitted' : 'Not Submitted'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-bold text-zinc-500">UTR Number</div>
+                        <div className={activeOrder.paymentDetails?.utrNumber ? 'text-emerald-300 font-semibold' : 'text-zinc-400 italic'}>
+                          {activeOrder.paymentDetails?.utrNumber || 'Not Submitted'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-bold text-zinc-500">Payment Status</div>
+                        <div className="text-zinc-200 font-semibold">{activeOrder.paymentStatus.replace(/_/g, ' ')}</div>
+                      </div>
+                    </div>
+                    {!hasSubmittedPaymentScreenshot(activeOrder) && activeOrder.paymentStatus !== 'paid' && (
+                      <p className="text-[11px] text-amber-300">The customer has not submitted a payment screenshot. Payment cannot be confirmed until proof is submitted and checked.</p>
+                    )}
+                  </div>
+
                   <a
                     href={`https://wa.me/${activeOrder.whatsappNumber.replace(/\\D/g, '')}?text=${encodeURIComponent(`Hi ${activeOrder.customerName}, CAMPORA update for order ${activeOrder.id}: ${activeOrder.status.replace(/_/g, ' ')}. Please reply here if you need help.`)}`}
                     target="_blank"
@@ -801,7 +829,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         </span>
                       )}
                       {/* Manual payment confirmation remains for legacy UPI proof only. */}
-                      {activeOrder.paymentStatus === 'verification_pending' && !(activeOrder.paymentGateway?.provider === 'razorpay' && activeOrder.paymentGateway.status === 'created') && (
+                      {activeOrder.paymentStatus === 'verification_pending' && !(activeOrder.paymentGateway?.provider === 'razorpay' && activeOrder.paymentGateway.status === 'created') && hasSubmittedPaymentScreenshot(activeOrder) && (
                         <button
                           id="btn-admin-confirm-pay"
                           onClick={() => handleConfirmPayment()}
@@ -809,6 +837,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         >
                           <CreditCard className="w-3.5 h-3.5" /> Confirm Payment
                         </button>
+                      )}
+                      {activeOrder.paymentStatus !== 'paid' && !hasSubmittedPaymentScreenshot(activeOrder) && (
+                        <span className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 text-xs font-semibold">
+                          Payment proof: Not Submitted
+                        </span>
                       )}
 
                       {/* Reject Order */}
@@ -1040,7 +1073,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                             {ord.paymentDetails.utrNumber}
                           </span>
                         ) : (
-                          <span className="text-zinc-500 italic">No UTR submitted</span>
+                          <span className="text-zinc-500 italic">Not Submitted</span>
                         )}
                       </td>
                       <td className="py-3.5">
@@ -1052,7 +1085,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                             <FileImage className="w-3.5 h-3.5 text-amber-400" /> View Receipt
                           </button>
                         ) : (
-                          <span className="text-zinc-500 text-[11px]">No file</span>
+                          <span className="text-zinc-500 text-[11px] italic">Not Submitted</span>
                         )}
                       </td>
                       <td className="py-3.5">
@@ -1062,13 +1095,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         {ord.paymentStatus === 'pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Payment Proof Not Submitted</span>}
                       </td>
                       <td className="py-3.5 text-right space-x-2">
-                        {ord.paymentStatus === 'verification_pending' && (
+                        {ord.paymentStatus === 'verification_pending' && hasSubmittedPaymentScreenshot(ord) && (
                           <button
                             onClick={() => handleConfirmPayment(ord.id)}
                             className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-colors"
                           >
                             Confirm ₹{ord.finalPrice || ord.total}
                           </button>
+                        )}
+                        {ord.paymentStatus !== 'paid' && !hasSubmittedPaymentScreenshot(ord) && (
+                          <span className="text-[11px] text-zinc-500 italic">Proof Not Submitted</span>
                         )}
                         {ord.paymentStatus === 'verification_pending' && (
                           <button
