@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
-import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomInt, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
@@ -14,6 +14,40 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Express 4 does not catch errors thrown inside async route handlers. Without this, a single
+// malformed request or a failed outbound call (for example to Razorpay) becomes an unhandled
+// rejection that terminates the whole Node process. Wrap every route handler so that errors are
+// forwarded to the error middleware registered in startServer().
+function wrapAsyncHandler(handler: (req: Request, res: Response, next: NextFunction) => unknown) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = handler(req, res, next);
+      if (result && typeof (result as Promise<unknown>).catch === 'function') {
+        (result as Promise<unknown>).catch(next);
+      }
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+for (const method of ['get', 'post', 'put', 'patch', 'delete'] as const) {
+  const original = (app[method] as (...args: unknown[]) => unknown).bind(app);
+  (app as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
+    // app.get('setting') with a single argument is Express's settings getter; leave it alone.
+    if (args.length < 2) return original(...args);
+    const [route, ...handlers] = args;
+    return original(route, ...handlers.map((handler) => (
+      typeof handler === 'function' && handler.length < 4
+        ? wrapAsyncHandler(handler as (req: Request, res: Response, next: NextFunction) => unknown)
+        : handler
+    )));
+  };
+}
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason instanceof Error ? reason.message : reason);
+});
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
@@ -202,6 +236,30 @@ function parsePrivateUpload(dataUrl: unknown, fileName: unknown): { buffer: Buff
   return { buffer, mimeType: expectedMimeType };
 }
 
+// Attachment records arrive from the browser. Keep only display fields: storage paths and
+// file contents must only ever be set by the server after a validated upload, otherwise a
+// customer could point an order at someone else's private file or bloat the stored state.
+function sanitizeAttachment(raw: unknown): OrderAttachment | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const item = raw as Record<string, unknown>;
+  if (typeof item.id !== 'string' || !item.id || item.id.length > 80) return undefined;
+  const text = (value: unknown, max: number, fallback = '') => (typeof value === 'string' ? value.slice(0, max) : fallback);
+  return {
+    id: item.id,
+    name: text(item.name, 180, 'attachment'),
+    size: text(item.size, 40),
+    type: text(item.type, 120),
+  };
+}
+
+function generateOrderId(): string {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `CMP-${randomInt(10_000_000, 100_000_000)}`;
+    if (!ordersStore.some((order) => order.id === candidate)) return candidate;
+  }
+  throw new Error('Unable to allocate an order number. Please try again.');
+}
+
 async function uploadPrivateFile(
   orderId: string,
   category: string,
@@ -296,8 +354,13 @@ const authenticateToken = (req: RequestWithUser, res: Response, next: NextFuncti
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthUser;
-    req.user = decoded;
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as AuthUser & { aud?: unknown };
+    // Only genuine session tokens are accepted. Other tokens signed with the same secret (such as
+    // the short-lived OAuth state token, which anyone can request) must never act as a login.
+    const isSessionToken = typeof decoded?.id === 'string' && decoded.id.length > 0
+      && (decoded.role === 'admin' || decoded.role === 'customer')
+      && decoded.aud === undefined;
+    req.user = isSessionToken ? decoded : undefined;
   } catch (err) {
     // Token invalid or expired
     req.user = undefined;
@@ -1021,15 +1084,18 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
 
 // Admin Login (Strictly separate from Customer Google Auth)
 app.post('/api/auth/admin/login', adminLoginLimiter, async (req: Request, res: Response) => {
-  const { username, password } = req.body;
+  const { username, password } = req.body || {};
 
-  if (!username || !password) {
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
     res.status(400).json({ error: 'Username and password are required.' });
     return;
   }
 
-  // Server-side validation against protected credentials
-  if (username.trim() === ADMIN_USERNAME && password.trim() === ADMIN_PASSWORD) {
+  // Server-side validation against protected credentials, compared in constant time.
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  const usernameMatches = timingSafeEqual(digest(username.trim()), digest(ADMIN_USERNAME));
+  const passwordMatches = timingSafeEqual(digest(password.trim()), digest(ADMIN_PASSWORD));
+  if (usernameMatches && passwordMatches) {
     const adminUser: AuthUser = {
       id: 'admin-tanmay-1',
       name: 'Tanmay (CAMPORA Admin)',
@@ -1070,20 +1136,31 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
     res.status(400).json({ error: 'Password must contain at least 8 characters.' });
     return;
   }
+  // bcrypt only uses the first 72 bytes, and hashing huge inputs wastes CPU.
+  if (password.length > 128 || email.length > 254) {
+    res.status(400).json({ error: 'Email or password is too long.' });
+    return;
+  }
 
   const normalizedEmail = email.trim().toLowerCase();
   let user = usersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
 
   if (!user) {
-    if (!name?.trim()) {
+    if (typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'Name is required when creating a customer account.' });
       return;
     }
+    const passwordHash = await bcrypt.hash(password, 12);
+    // Another request may have registered this email while the hash was computing.
+    if (usersStore.some((u) => u.email.toLowerCase() === normalizedEmail)) {
+      res.status(409).json({ error: 'An account with this email already exists. Please sign in.' });
+      return;
+    }
     const newCustomer: StoredUser = {
-      id: `cust-${Date.now()}`,
-      name: name.trim(),
+      id: `cust-${randomBytes(8).toString('hex')}`,
+      name: name.trim().slice(0, 100),
       email: normalizedEmail,
-      passwordHash: await bcrypt.hash(password, 12),
+      passwordHash,
       role: 'customer',
       whatsapp: whatsapp?.trim() || '',
       college: college?.trim() || '',
@@ -1260,8 +1337,14 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
   }
 
   const data = req.body || {};
-  if (!data.customerName?.trim() || !data.whatsappNumber?.trim() || !data.topic?.trim() || !data.serviceId) {
+  const isText = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+  if (!isText(data.customerName) || !isText(data.whatsappNumber) || !isText(data.topic) || !data.serviceId) {
     res.status(400).json({ error: 'Please complete your name, WhatsApp number, service and topic.' });
+    return;
+  }
+  if (data.customerName.length > 100 || data.whatsappNumber.length > 30 || data.topic.length > 300
+    || (data.college !== undefined && (typeof data.college !== 'string' || data.college.length > 200))) {
+    res.status(400).json({ error: 'One of the fields is too long or invalid. Please shorten it and try again.' });
     return;
   }
 
@@ -1305,7 +1388,12 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
 
   const total = Math.max(0, subtotal - discount);
   const now = new Date().toISOString();
-  const orderId = `CMP-${Date.now().toString().slice(-8)}`;
+  const orderId = generateOrderId();
+  const collegeTemplateFile = data.hasCollegeTemplate ? sanitizeAttachment(data.collegeTemplateFile) : undefined;
+  const referenceFiles = (Array.isArray(data.referenceFiles) ? data.referenceFiles : [])
+    .slice(0, 10)
+    .map(sanitizeAttachment)
+    .filter((file): file is OrderAttachment => Boolean(file));
 
   const newOrder: CamporaOrder = {
     id: orderId,
@@ -1323,9 +1411,9 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
     deadline: typeof data.deadline === 'string' ? data.deadline : 'Standard (24-48 hrs)',
     instructions: typeof data.instructions === 'string' ? data.instructions.slice(0, 10000) : '',
     hasCollegeTemplate: Boolean(data.hasCollegeTemplate),
-    collegeTemplateFile: data.collegeTemplateFile,
+    collegeTemplateFile,
     templateInstructions: typeof data.templateInstructions === 'string' ? data.templateInstructions.slice(0, 5000) : undefined,
-    referenceFiles: Array.isArray(data.referenceFiles) ? data.referenceFiles.slice(0, 10) : [],
+    referenceFiles,
     subtotal,
     finalPrice: total,
     discount,
@@ -1993,6 +2081,11 @@ app.get('/api/admin/files', requireAdmin, async (_req: RequestWithUser, res: Res
 // ==========================================
 async function startServer() {
   await loadPersistentState();
+  // Unknown API paths must answer with JSON, not the single-page app's HTML.
+  app.use('/api', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'Not found.' });
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -2006,6 +2099,19 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Final error handler: log the cause, return a generic message (never internal details).
+  app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+    console.error('Request failed:', error instanceof Error ? error.message : error);
+    if (res.headersSent) {
+      next(error);
+      return;
+    }
+    const status = typeof (error as { status?: unknown })?.status === 'number' ? (error as { status: number }).status : 500;
+    res.status(status >= 400 && status < 600 ? status : 500).json({
+      error: status === 413 ? 'The request is too large.' : status < 500 ? 'The request could not be processed.' : 'Something went wrong. Please try again.',
+    });
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`CAMPORA Server running on http://0.0.0.0:${PORT}`);
