@@ -55,7 +55,7 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 // Enable verification only when at least one complete transactional email sender is configured.
 const EMAIL_VERIFICATION_ENABLED = Boolean(
-  (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) ||
+  (process.env.GMAIL_APPS_SCRIPT_URL && process.env.GMAIL_APPS_SCRIPT_TOKEN) ||
   (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL)
 );
 const SUPABASE_URL = process.env.SUPABASE_URL;
