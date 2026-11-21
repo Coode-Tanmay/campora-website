@@ -73,13 +73,20 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   }, []);
 
   const handleCancelUnpaidOrder = async (order: CamporaOrder) => {
-    if (order.paymentStatus !== 'pending' || order.paymentDetails?.screenshotName) return;
-    const confirmed = window.confirm('Only cancel if you have NOT transferred the payment. If you already paid, contact CAMPORA support. This will cancel the entire order.');
-    if (!confirmed) return;
+    if (['cancelled', 'completed', 'rejected'].includes(order.status)) return;
+    const paymentMadeOrSubmitted = order.paymentStatus === 'paid'
+      || order.paymentStatus === 'verification_pending'
+      || Boolean(order.paymentDetails?.utrNumber || order.paymentDetails?.screenshotName);
+    const message = paymentMadeOrSubmitted
+      ? `Cancel order ${order.id}? If you have already paid, CAMPORA will verify the payment and arrange a refund to the original payment source (the same UPI/bank source used). Refunds are not instant and require manual verification and processing by CAMPORA. Your order will be cancelled and a refund request will be created.`
+      : `Cancel order ${order.id}? This will cancel the entire order. No refund is due because no payment has been submitted.`;
+    if (!window.confirm(message)) return;
     try {
       await api.cancelCustomerOrder(order.id);
       await fetchOrders();
-      window.alert(`Order ${order.id} has been cancelled.`);
+      window.alert(paymentMadeOrSubmitted
+        ? `Order ${order.id} has been cancelled. Your refund request is pending CAMPORA verification and processing to the original payment source.`
+        : `Order ${order.id} has been cancelled.`);
     } catch (error: any) {
       window.alert(error.message || 'Could not cancel this order. Please contact CAMPORA support.');
     }
@@ -392,8 +399,17 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       )}
 
                       {ord.paymentStatus === 'paid' && ord.status === 'completed' && (ord.deliverables || []).map((file) => file.downloadUrl && <a key={file.id} href={file.downloadUrl} download className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</a>)}
-                      {ord.paymentStatus === 'pending' && !ord.paymentDetails?.screenshotName && (
+                      {!['cancelled', 'completed', 'rejected'].includes(ord.status) && (
                         <button onClick={() => handleCancelUnpaidOrder(ord)} className="px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/5 text-red-300 hover:bg-red-500/10 text-xs font-medium">Cancel Order</button>
+                      )}
+                      {ord.refundStatus === 'requested' && (
+                        <span className="px-2 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px] font-medium">Refund Requested</span>
+                      )}
+                      {ord.refundStatus === 'processing' && (
+                        <span className="px-2 py-1 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-300 text-[11px] font-medium">Refund Processing</span>
+                      )}
+                      {ord.refundStatus === 'refunded' && (
+                        <span className="px-2 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[11px] font-medium">Refunded</span>
                       )}
                       <button
                         id={`btn-view-order-${ord.id}`}
