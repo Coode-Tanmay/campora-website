@@ -1997,8 +1997,8 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   const order = ordersStore[orderIndex];
-  if (action === 'confirm' && (order.paymentStatus !== 'verification_pending' || !order.paymentDetails?.screenshotPath)) {
-    res.status(409).json({ error: 'A submitted payment screenshot must be checked before confirming payment.' });
+  if (action === 'confirm' && (!['pending', 'verification_pending', 'rejected'].includes(order.paymentStatus) || ['cancelled', 'completed', 'rejected'].includes(order.status))) {
+    res.status(409).json({ error: 'This order is not eligible for manual payment confirmation.' });
     return;
   }
   if (action === 'reject' && order.paymentStatus !== 'verification_pending') {
@@ -2016,7 +2016,11 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
         return {
           ...step,
           title: 'Payment Confirmed',
-          description: order.paymentDetails?.utrNumber ? `₹${payableAmount} verified in bank records (UTR: ${utr}).` : `₹${payableAmount} manually verified against the payment screenshot and bank records.`,
+          description: order.paymentDetails?.utrNumber
+            ? `₹${payableAmount} manually confirmed by admin (UTR: ${utr}).`
+            : order.paymentDetails?.screenshotPath
+              ? `₹${payableAmount} manually confirmed by admin after checking the submitted screenshot and bank records.`
+              : `₹${payableAmount} manually marked as paid by admin.`,
           status: 'completed' as const,
           timestamp: now,
         };
@@ -2029,9 +2033,9 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     const updatedOrder: CamporaOrder = {
       ...order,
-      activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_verified', description: `Payment of ₹${payableAmount} manually verified.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
+      activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_verified', description: order.paymentDetails?.screenshotPath ? `Payment of ₹${payableAmount} manually verified with submitted proof.` : `Admin manually marked ₹${payableAmount} as paid without a submitted screenshot.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       paymentStatus: 'paid',
-      paymentProofStatus: 'submitted',
+      paymentProofStatus: order.paymentDetails?.screenshotPath ? 'submitted' : 'not_submitted',
       status: order.status,
       progressPercent: order.progressPercent,
       paymentDetails: {
@@ -2111,10 +2115,6 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
   }
 
   const order = ordersStore[orderIndex];
-  if (order.paymentStatus !== 'paid' || ['cancelled', 'rejected'].includes(order.status)) {
-    res.status(409).json({ error: 'Payment must be verified and the order must remain active before uploading a customer deliverable.' });
-    return;
-  }
   let parsedFile: { buffer: Buffer; mimeType: string };
   let storagePath: string;
   try {
@@ -2152,8 +2152,8 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
   const updatedOrder: CamporaOrder = {
     ...order,
     activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'deliverable_uploaded', description: `Completed deliverable uploaded: ${newDeliverable.title}`, actor: req.user?.name || 'CAMPORA Admin', timestamp: new Date().toISOString() }],
-    status: 'completed',
-    progressPercent: 100,
+    status: ['cancelled', 'rejected'].includes(order.status) ? order.status : 'completed',
+    progressPercent: ['cancelled', 'rejected'].includes(order.status) ? order.progressPercent : 100,
     deliverables: updatedDeliverables,
     timeline: updatedTimeline,
     updatedAt: new Date().toISOString(),
@@ -2169,7 +2169,9 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
     return;
   }
 
-  void sendDeliveryEmail(updatedOrder.customerEmail, updatedOrder.customerName, updatedOrder.id);
+  if (updatedOrder.paymentStatus === 'paid' && updatedOrder.status === 'completed') {
+    void sendDeliveryEmail(updatedOrder.customerEmail, updatedOrder.customerName, updatedOrder.id);
+  }
   res.json({
     success: true,
     message: 'Completed deliverable uploaded successfully.',
