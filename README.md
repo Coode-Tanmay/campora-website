@@ -54,7 +54,7 @@ Configure these in the server host's secret/environment settings. Never commit r
 | `MICROSOFT_CLIENT_SECRET` | Optional Microsoft OAuth client secret |
 | `GEMINI_API_KEY` | Optional/feature-dependent Gemini API key |
 | `RESEND_API_KEY` | Server-only Resend API key for transactional email | 
-| `RESEND_FROM_EMAIL` | Sender identity on a domain verified in Resend; enables transactional email and new-account email verification |
+| `RESEND_FROM_EMAIL` | Optional fallback sender identity on a domain verified in Resend |\n| `GMAIL_USER` | Optional Gmail SMTP sender address (for example `camporasupport@gmail.com`) |\n| `GMAIL_APP_PASSWORD` | Server-only Google App Password; use a 16-character App Password, never the normal account password |
 | `RAZORPAY_ENABLED` | Must remain `false` until the owner explicitly approves activation after testing |
 | `RAZORPAY_MODE` | Must explicitly be `test` or `live`; missing/invalid values disable the gateway; set to `live` only after sandbox validation |
 | `RAZORPAY_LIVE_APPROVED` | Must remain `false`; required to be explicitly set to `true` before live mode can activate |
@@ -72,9 +72,9 @@ Microsoft's redirect URI, if enabled later, must be:
 
 ## Transactional email
 
-- Transactional email uses Resend through the server-side `RESEND_API_KEY`.
-- Set `RESEND_FROM_EMAIL` only to an address on a domain verified in Resend (for example `CAMPORA <support@example.com>`).
-- Email sending and new email/password account verification remain disabled until both variables are configured. This avoids blocking sign-ups while Resend is limited to its test sender.
+- Transactional email prefers Gmail SMTP when `GMAIL_USER` and `GMAIL_APP_PASSWORD` are configured. Resend remains an optional fallback when both `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL` are configured.
+- For Gmail, use a Google App Password generated with 2-Step Verification; never use the normal Google account password. Keep it only in the backend host's secret settings.
+- New email/password account verification is enabled when either complete sender configuration is present. If Gmail SMTP fails, the mailer attempts the configured Resend fallback.
 - Verification links expire after 24 hours; password-reset links expire after 30 minutes. Only hashed one-time tokens are stored.
 - Emails include account verification, password reset, order receipt, payment proof/verification, order status and completion notifications.
 
