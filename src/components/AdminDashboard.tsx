@@ -736,9 +736,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         )}
                       </div>
                       <p className="text-xs text-zinc-400 mt-1">Topic: <strong className="text-zinc-200">{activeOrder.topic}</strong></p>
-                      {activeOrder.deadline.toLowerCase().includes('urgent') && (
-                        <div className="flex flex-wrap items-center">
-                          <span className="inline-flex mt-2 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold">URGENT DEADLINE</span>
+                      {activeOrder.status !== 'cancelled' && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {activeOrder.deadline.toLowerCase().includes('urgent') && (
+                            <span className="inline-flex mt-2 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold">URGENT DEADLINE</span>
+                          )}
                           <UrgentDeadlineCountdown order={activeOrder} />
                         </div>
                       )}
