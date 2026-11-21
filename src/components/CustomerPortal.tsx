@@ -72,6 +72,19 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
     setRazorpayEnabled(false); // CAMPORA uses direct UPI only to avoid gateway fees.
   }, []);
 
+  const handleCancelUnpaidOrder = async (order: CamporaOrder) => {
+    if (order.paymentStatus !== 'pending' || order.paymentDetails?.screenshotName) return;
+    const confirmed = window.confirm('Only cancel if you have NOT transferred the payment. If you already paid, contact CAMPORA support. This will cancel the entire order.');
+    if (!confirmed) return;
+    try {
+      await api.cancelCustomerOrder(order.id);
+      await fetchOrders();
+      window.alert(`Order ${order.id} has been cancelled.`);
+    } catch (error: any) {
+      window.alert(error.message || 'Could not cancel this order. Please contact CAMPORA support.');
+    }
+  };
+
   const handleStartRazorpayCheckout = async (order: CamporaOrder) => {
     if (startingPaymentFor) return;
     setStartingPaymentFor(order.id);
@@ -379,6 +392,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       )}
 
                       {ord.paymentStatus === 'paid' && ord.status === 'completed' && (ord.deliverables || []).map((file) => file.downloadUrl && <a key={file.id} href={file.downloadUrl} download className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</a>)}
+                      {ord.paymentStatus === 'pending' && !ord.paymentDetails?.screenshotName && (
+                        <button onClick={() => handleCancelUnpaidOrder(ord)} className="px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/5 text-red-300 hover:bg-red-500/10 text-xs font-medium">Cancel Order</button>
+                      )}
                       <button
                         id={`btn-view-order-${ord.id}`}
                         onClick={() => setSelectedOrder(ord)}
