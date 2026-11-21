@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { StatsBar } from './components/StatsBar';
@@ -11,16 +11,18 @@ import { PortfolioSection } from './components/PortfolioSection';
 import { FAQSection } from './components/FAQSection';
 import { Footer } from './components/Footer';
 import { OrderFormModal } from './components/OrderFormModal';
-import { OrderTrackingView } from './components/OrderTrackingView';
-import { AdminDashboard } from './components/AdminDashboard';
-import { AdminLogin } from './components/AdminLogin';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
-import { CustomerPortal } from './components/CustomerPortal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder, OrderFileUploadPayload } from './types';
 import { api } from './services/api';
 import { CheckCircle2, MessageCircle, Mail } from 'lucide-react';
+
+// Screens that most visitors never open are loaded on demand to keep the first page fast.
+const OrderTrackingView = lazy(() => import('./components/OrderTrackingView').then((m) => ({ default: m.OrderTrackingView })));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const AdminLogin = lazy(() => import('./components/AdminLogin').then((m) => ({ default: m.AdminLogin })));
+const CustomerPortal = lazy(() => import('./components/CustomerPortal').then((m) => ({ default: m.CustomerPortal })));
 
 declare global {
   interface Window {
@@ -307,6 +309,7 @@ function AppContent() {
           </div>
         )}
 
+        <Suspense fallback={<div className="py-24 text-center text-xs text-zinc-500" role="status">Loading…</div>}>
         {/* Customer Portal (Protected Route) */}
         {currentTab === 'customer-portal' && (
           isCustomer ? (
@@ -355,6 +358,7 @@ function AppContent() {
             onUpdateOrderStatus={handleUpdateOrderStatus}
           />
         )}
+        </Suspense>
       </main>
 
       {/* Footer */}
