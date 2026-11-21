@@ -52,7 +52,8 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
 
-  const activeOrder = orders.find((o) => o.id === selectedOrderId) || orders[0];
+  const trackableOrders = orders.filter((order) => order.paymentStatus === 'paid');
+  const activeOrder = trackableOrders.find((o) => o.id === selectedOrderId) || trackableOrders[0];
 
   const handleCopyReferral = () => {
     navigator.clipboard.writeText('CAMPORA100');
@@ -83,7 +84,7 @@ export const OrderTrackingView: React.FC<OrderTrackingViewProps> = ({
     onUpdateOrderStatus?.(activeOrder.id, response.order);
   };
 
-  const filteredOrders = orders.filter((ord) => {
+  const filteredOrders = trackableOrders.filter((ord) => {
     if (filterTab === 'all') return true;
     if (filterTab === 'active') return ord.status === 'in_progress' || ord.status === 'review';
     if (filterTab === 'review') return ord.paymentStatus === 'verification_pending' || ord.status === 'requirements_review' || ord.status === 'quote_sent' || ord.status === 'payment_pending';
