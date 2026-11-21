@@ -53,6 +53,8 @@ process.on('unhandledRejection', (reason) => {
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+// Email verification is enabled only after a verified sender identity is configured in Resend.
+const EMAIL_VERIFICATION_ENABLED = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
@@ -1171,11 +1173,13 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
       college: college?.trim() || '',
       authProvider: 'email',
       createdAt: new Date().toISOString(),
-      emailVerified: false,
+      emailVerified: !EMAIL_VERIFICATION_ENABLED,
     };
-    verificationToken = randomBytes(32).toString('hex');
-    newCustomer.emailVerificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
-    newCustomer.emailVerificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    if (EMAIL_VERIFICATION_ENABLED) {
+      verificationToken = randomBytes(32).toString('hex');
+      newCustomer.emailVerificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
+      newCustomer.emailVerificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    }
     usersStore.push(newCustomer);
     user = newCustomer;
   } else {
@@ -1184,7 +1188,7 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
       return;
     }
     // Existing accounts without this field remain verified; only new registrations require verification.
-    if (user.emailVerified === false) {
+    if (EMAIL_VERIFICATION_ENABLED && user.emailVerified === false) {
       verificationToken = randomBytes(32).toString('hex');
       user.emailVerificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
       user.emailVerificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
@@ -1196,7 +1200,7 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
 
   await persistState();
 
-  if (user.emailVerified === false) {
+  if (EMAIL_VERIFICATION_ENABLED && user.emailVerified === false) {
     const sent = verificationToken ? await sendVerificationEmail(user.email, user.name, verificationToken) : false;
     res.status(sent ? 200 : 503).json({ success: sent, verificationRequired: true, error: sent ? undefined : 'Your account is saved, but the verification email could not be sent. Please try signing in again later or contact support.' });
     return;
@@ -1853,9 +1857,10 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
-  if (['approved', 'rejected', 'cancelled', 'in_progress', 'completed'].includes(status)) {
+  if (status === 'completed') {
+    void sendDeliveryEmail(order.customerEmail, order.customerName, order.id);
+  } else if (['approved', 'rejected', 'cancelled', 'in_progress'].includes(status)) {
     void sendOrderStatusEmail(order.customerEmail, order.customerName, order.id, status, status === 'rejected' ? rejectionReason : status === 'cancelled' ? cancellationReason : undefined);
-    if (status === 'completed') void sendDeliveryEmail(order.customerEmail, order.customerName, order.id);
   }
   res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
 });
@@ -2035,7 +2040,6 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
     return;
   }
 
-  void sendDeliveryEmail(order.customerEmail, order.customerName, order.id);
   res.json({
     success: true,
     message: 'Completed deliverable uploaded successfully.',
