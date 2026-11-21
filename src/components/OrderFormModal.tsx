@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { SERVICES_DATA } from '../data/mockData';
 import { CamporaOrder, OrderAttachment, PricingType, OrderStatus, QuoteStatus, OrderFileUploadPayload, PaymentStatus } from '../types';
+import { api } from '../services/api';
+import { ManualPaymentSection } from './ManualPaymentSection';
 import {
   X,
   ArrowRight,
@@ -102,6 +104,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [orderCompletedSuccess, setOrderCompletedSuccess] = useState(false);
   const [createdOrderSummary, setCreatedOrderSummary] = useState<CamporaOrder | null>(null);
+  const [paymentProofSubmitted, setPaymentProofSubmitted] = useState(false);
 
   // Validation Error Message
   const [stepError, setStepError] = useState('');
@@ -312,6 +315,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const handleFinalSubmit = async () => {
     setIsProcessing(true);
     setStepError('');
+    setPaymentProofSubmitted(false);
 
     const initialStatus: OrderStatus = requiresAdminReview ? 'requirements_review' : 'new_order';
     const initialQuoteStatus: QuoteStatus = requiresAdminReview ? 'pending' : 'not_required';
@@ -467,7 +471,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               <p className="text-sm text-[#B8B8B8] max-w-lg mx-auto mt-2">
                 {createdOrderSummary.requiresReview
                   ? 'Our academic review desk is examining your brief. You will receive quote confirmation on your WhatsApp & dashboard shortly.'
-                  : 'Your order has been securely recorded. You can track its status from your student dashboard; payment is only due when the order is ready for it.'}
+                  : 'Your order has been securely recorded. Complete the UPI payment below and submit your UTR for admin verification.'}
               </p>
             </div>
 
@@ -494,6 +498,33 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                 <span className="font-bold text-[#D4A72C] uppercase">{createdOrderSummary.status.replace('_', ' ')}</span>
               </div>
             </div>
+
+            {!createdOrderSummary.requiresReview && paymentMethod === 'upi' && createdOrderSummary.finalPrice > 0 && (
+              <div className="max-w-2xl mx-auto w-full text-left">
+                {paymentProofSubmitted ? (
+                  <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                    <h4 className="font-bold text-emerald-300">Payment proof submitted</h4>
+                    <p className="text-xs text-[#B8B8B8]">Your UTR has been sent to CAMPORA for manual verification. Your order will proceed after the payment is verified.</p>
+                  </div>
+                ) : (
+                  <>
+                    <h4 className="text-lg font-bold text-white mb-3 text-center">Complete Your UPI Payment</h4>
+                    <ManualPaymentSection
+                      order={createdOrderSummary}
+                      onPaymentSubmitted={async (utr, screenshot) => {
+                        await api.submitPaymentProof(createdOrderSummary.id, {
+                          utrNumber: utr,
+                          screenshotUrl: screenshot,
+                          screenshotName: screenshot ? 'Receipt_Proof.png' : undefined,
+                        });
+                        setPaymentProofSubmitted(true);
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               <button
