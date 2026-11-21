@@ -1719,6 +1719,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, e
 
   const now = new Date().toISOString();
   const payableAmount = order.finalPrice ?? order.total;
+  const previousScreenshotPath = order.paymentDetails?.screenshotPath;
   const updatedTimeline: TimelineStep[] = (order.timeline || []).map((step) =>
     step.id === 't3' || step.title.toLowerCase().includes('payment')
       ? { ...step, title: 'Payment Verification Pending', description: 'Payment screenshot submitted. CAMPORA is checking the transaction.', status: 'current' as const, timestamp: now }
@@ -1729,6 +1730,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, e
     paymentStatus: 'verification_pending',
     status: order.status,
     paymentProofStatus: 'submitted',
+    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_proof_submitted', description: cleanUtr ? 'Payment screenshot and UTR submitted for manual verification.' : 'Payment screenshot submitted; no UTR was provided.', actor: user.name || 'Customer', timestamp: now }],
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
       utrNumber: cleanUtr || undefined,
@@ -1749,6 +1751,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, e
     await removePrivateFiles([screenshotPath]);
     return res.status(500).json({ error: 'Payment proof could not be saved. Please try again.' });
   }
+  if (previousScreenshotPath && previousScreenshotPath !== screenshotPath) await removePrivateFiles([previousScreenshotPath]);
   void sendPaymentUpdateEmail(user.email, user.name, updatedOrder.id, 'received');
   const hydrated = await hydrateOrderForResponse(updatedOrder);
   const { adminNotes, ...customerSafeOrder } = hydrated;
@@ -1866,6 +1869,10 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
   }
 
   const order = ordersStore[orderIndex];
+  if (status === 'completed') {
+    res.status(409).json({ error: 'An order can only be completed after a deliverable file is successfully uploaded.' });
+    return;
+  }
   if (['in_progress', 'review'].includes(status) && order.paymentStatus !== 'paid') {
     res.status(409).json({ error: 'Payment must be verified before work can move into progress or review.' });
     return;
