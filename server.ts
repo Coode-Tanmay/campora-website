@@ -331,7 +331,7 @@ async function hydrateOrderForResponse(order: CamporaOrder): Promise<CamporaOrde
     const { storagePath, dataUrl, ...attachment } = order.collegeTemplateFile;
     hydrated.collegeTemplateFile = {
       ...attachment,
-      downloadUrl: storagePath ? await createPrivateFileUrl(storagePath, true) : undefined,
+      downloadUrl: storagePath ? `/api/customer/orders/${encodeURIComponent(order.id)}/files/${encodeURIComponent(attachment.id)}/download` : undefined,
     };
   }
 
@@ -339,7 +339,7 @@ async function hydrateOrderForResponse(order: CamporaOrder): Promise<CamporaOrde
     const { storagePath, dataUrl, ...attachment } = file;
     return {
       ...attachment,
-      downloadUrl: storagePath ? await createPrivateFileUrl(storagePath, true) : undefined,
+      downloadUrl: storagePath ? `/api/customer/orders/${encodeURIComponent(order.id)}/files/${encodeURIComponent(attachment.id)}/download` : undefined,
     };
   }));
 
@@ -358,7 +358,7 @@ async function hydrateOrderForResponse(order: CamporaOrder): Promise<CamporaOrde
       const { storagePath, ...file } = deliverable;
       return {
         ...file,
-        downloadUrl: storagePath ? await createPrivateFileUrl(storagePath, true) : undefined,
+        downloadUrl: storagePath ? `/api/customer/orders/${encodeURIComponent(order.id)}/files/${encodeURIComponent(file.id)}/download` : undefined,
       };
     }));
   }
@@ -1474,6 +1474,29 @@ app.get('/api/customer/orders/:id', requireAuth, async (req: RequestWithUser, re
 
   const hydratedOrder = await hydrateOrderForResponse(order);
   res.json({ order: user.role === 'admin' ? hydratedOrder : toCustomerSafeOrder(hydratedOrder) });
+});
+
+// Authenticated download proxy: renews a short-lived private Storage URL on every click.
+app.get('/api/customer/orders/:id/files/:fileId/download', requireAuth, async (req: RequestWithUser, res: Response) => {
+  const order = ordersStore.find((item) => item.id.toLowerCase() === req.params.id.toLowerCase());
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (req.user!.role !== 'admin' && (req.user!.role !== 'customer' || order.customerId !== req.user!.id)) {
+    return res.status(403).json({ error: 'You cannot download files from this order.' });
+  }
+  const fileId = req.params.fileId;
+  const attachment = [
+    ...(order.collegeTemplateFile ? [order.collegeTemplateFile] : []),
+    ...(order.referenceFiles || []),
+    ...(order.deliverables || []),
+  ].find((file) => file.id === fileId);
+  if (!attachment?.storagePath) return res.status(404).json({ error: 'File not found.' });
+  if (req.user!.role !== 'admin' && attachment === (order.deliverables || []).find((file) => file.id === fileId)
+    && (order.paymentStatus !== 'paid' || order.status !== 'completed')) {
+    return res.status(403).json({ error: 'Completed files are available after payment verification and order completion.' });
+  }
+  const signedUrl = await createPrivateFileUrl(attachment.storagePath, true);
+  if (!signedUrl) return res.status(503).json({ error: 'Secure download is temporarily unavailable. Please try again.' });
+  return res.redirect(302, signedUrl);
 });
 
 // Create customer order. Price, discount and eligibility are always calculated server-side.
