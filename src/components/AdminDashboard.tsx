@@ -872,7 +872,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
                       <button
                         type="submit"
-                        disabled={!newDeliverableFile || activeOrder.paymentStatus !== 'paid'}
+                        disabled={!newDeliverableFile || activeOrder.paymentStatus !== 'paid' || ['cancelled', 'rejected'].includes(activeOrder.status)}
                         className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
                       >
                         <FileCheck className="w-3.5 h-3.5" /> Upload & Mark Order Completed
