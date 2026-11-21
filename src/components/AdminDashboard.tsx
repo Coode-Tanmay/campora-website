@@ -100,7 +100,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [files, setFiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [manageOrdersTab, setManageOrdersTab] = useState<'live' | 'in_progress' | 'delayed' | 'cancelled' | 'refund_completed'>('live');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
