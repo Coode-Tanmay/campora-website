@@ -1,6 +1,6 @@
 const RESEND_API_URL = 'https://api.resend.com/emails';
 const APP_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').replace(/\/$/, '');
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'CAMPORA <onboarding@resend.dev>';
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
 
 function escapeHtml(value: unknown): string {
   const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -26,8 +26,8 @@ function emailLayout(title: string, preheader: string, body: string): string {
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.warn('Transactional email skipped: RESEND_API_KEY is not configured.');
+  if (!apiKey || !FROM_EMAIL) {
+    console.warn('Transactional email skipped: configure RESEND_API_KEY and a verified RESEND_FROM_EMAIL sender.');
     return false;
   }
   try {
