@@ -1660,6 +1660,7 @@ app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWith
   const updatedOrder: CamporaOrder = {
     ...order,
     status: 'cancelled',
+    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'customer_cancelled', description: 'Customer cancelled the order before submitting payment proof.', actor: user.name || 'Customer', timestamp: now }],
     cancellationReason: 'Customer cancelled during payment.',
     cancelledBy: 'Customer',
     cancelledAt: now,
@@ -1900,6 +1901,7 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
 
   const updatedOrder: CamporaOrder = {
     ...order,
+    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: status, description: `Order status changed to ${status.replace(/_/g, ' ')}${status === 'rejected' ? `: ${rejectionReason?.trim()}` : status === 'cancelled' ? `: ${cancellationReason?.trim()}` : ''}.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: new Date().toISOString() }],
     status,
     rejectionReason: status === 'rejected' ? rejectionReason?.trim() : order.rejectionReason,
     cancellationReason: status === 'cancelled' ? cancellationReason?.trim() : order.cancellationReason,
@@ -1964,6 +1966,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     const updatedOrder: CamporaOrder = {
       ...order,
+      activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_verified', description: `Payment of ₹${payableAmount} manually verified.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       paymentStatus: 'paid',
       status: order.status,
       progressPercent: order.progressPercent,
@@ -2006,6 +2009,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     const updatedOrder: CamporaOrder = {
       ...order,
+      activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_rejected', description: `Payment proof rejected: ${reason}`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       paymentStatus: 'rejected',
       paymentDetails: {
         ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }),
@@ -2042,6 +2046,10 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
   }
 
   const order = ordersStore[orderIndex];
+  if (order.paymentStatus !== 'paid') {
+    res.status(409).json({ error: 'Payment must be verified before uploading a customer deliverable.' });
+    return;
+  }
   let parsedFile: { buffer: Buffer; mimeType: string };
   let storagePath: string;
   try {
@@ -2078,6 +2086,7 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
 
   const updatedOrder: CamporaOrder = {
     ...order,
+    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'deliverable_uploaded', description: `Completed deliverable uploaded: ${newDeliverable.title}`, actor: req.user?.name || 'CAMPORA Admin', timestamp: new Date().toISOString() }],
     status: 'completed',
     progressPercent: 100,
     deliverables: updatedDeliverables,
