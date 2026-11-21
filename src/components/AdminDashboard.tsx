@@ -39,6 +39,7 @@ import {
   Eye,
   X,
   FileCheck,
+  Download,
 } from 'lucide-react';
 import { UPI_ID } from './UpiPaymentCard';
 import { ScreenshotPreviewModal } from './ScreenshotPreviewModal';
@@ -224,6 +225,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     e.preventDefault();
     if (!activeOrder || !newDeliverableTitle.trim() || !newDeliverableFile) {
       triggerToast('Please provide a title and select the actual deliverable file.');
+      return;
+    }
+    if (activeOrder.paymentStatus !== 'paid') {
+      triggerToast('Verify payment before uploading a customer deliverable.');
       return;
     }
     if (newDeliverableFile.size > 15 * 1024 * 1024) {
@@ -800,6 +805,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <Upload className="w-4 h-4" /> Upload Completed Deliverable
                     </div>
 
+                    {activeOrder.paymentStatus !== 'paid' && <p className="text-[11px] text-amber-300">Deliverable upload unlocks after payment is manually verified.</p>}
                     <form onSubmit={handleUploadDeliverable} className="space-y-2.5">
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                         <div className="sm:col-span-2">
@@ -839,13 +845,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
                       <button
                         type="submit"
-                        disabled={!newDeliverableFile}
+                        disabled={!newDeliverableFile || activeOrder.paymentStatus !== 'paid'}
                         className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
                       >
                         <FileCheck className="w-3.5 h-3.5" /> Upload & Mark Order Completed
                       </button>
                     </form>
                   </div>
+
+                  {/* Admin-only audit trail */}
+                  {activeOrder.activityHistory && activeOrder.activityHistory.length > 0 && (
+                    <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2">
+                      <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Order Activity History</div>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {[...activeOrder.activityHistory].reverse().map((entry) => <div key={entry.id} className="text-xs border-l-2 border-amber-500/40 pl-3"><div className="text-zinc-200 font-semibold">{entry.description}</div><div className="text-[10px] text-zinc-500">{entry.actor} • {new Date(entry.timestamp).toLocaleString()}</div></div>)}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Private Admin Notes (Protected from Customer) */}
                   <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2">
