@@ -390,7 +390,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
 
   const handleCancelOrder = async () => {
     if (!createdOrderSummary || isCancellingOrder) return;
-    const confirmed = window.confirm('Are you sure you want to cancel this order? The entire order will be marked as cancelled and cannot be resumed.');
+    const confirmed = window.confirm('Only cancel if you have NOT transferred the payment. If you already paid but have not uploaded the screenshot, contact CAMPORA support instead. Cancelling marks the entire order as cancelled and cannot be undone.');
     if (!confirmed) return;
 
     setIsCancellingOrder(true);
