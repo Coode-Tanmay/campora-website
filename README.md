@@ -53,6 +53,8 @@ Configure these in the server host's secret/environment settings. Never commit r
 | `MICROSOFT_CLIENT_ID` | Optional Microsoft OAuth client ID |
 | `MICROSOFT_CLIENT_SECRET` | Optional Microsoft OAuth client secret |
 | `GEMINI_API_KEY` | Optional/feature-dependent Gemini API key |
+| `RESEND_API_KEY` | Server-only Resend API key for transactional email | 
+| `RESEND_FROM_EMAIL` | Sender identity on a domain verified in Resend; enables transactional email and new-account email verification |
 | `RAZORPAY_ENABLED` | Must remain `false` until the owner explicitly approves activation after testing |
 | `RAZORPAY_MODE` | Must explicitly be `test` or `live`; missing/invalid values disable the gateway; set to `live` only after sandbox validation |
 | `RAZORPAY_LIVE_APPROVED` | Must remain `false`; required to be explicitly set to `true` before live mode can activate |
@@ -67,6 +69,14 @@ Google's authorized redirect URI must be:
 Microsoft's redirect URI, if enabled later, must be:
 
 `https://campora-website.vercel.app/auth/callback/microsoft`
+
+## Transactional email
+
+- Transactional email uses Resend through the server-side `RESEND_API_KEY`.
+- Set `RESEND_FROM_EMAIL` only to an address on a domain verified in Resend (for example `CAMPORA <support@example.com>`).
+- Email sending and new email/password account verification remain disabled until both variables are configured. This avoids blocking sign-ups while Resend is limited to its test sender.
+- Verification links expire after 24 hours; password-reset links expire after 30 minutes. Only hashed one-time tokens are stored.
+- Emails include account verification, password reset, order receipt, payment proof/verification, order status and completion notifications.
 
 ## File upload rules
 
