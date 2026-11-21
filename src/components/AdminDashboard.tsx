@@ -211,7 +211,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const handleRejectPayment = async (orderIdToReject?: string, reason?: string) => {
     const targetId = orderIdToReject || activeOrder?.id;
     if (!targetId) return;
-    const finalReason = reason || 'Payment not found in SBI bank statement. Please submit valid UTR.';
+    const finalReason = reason || 'Payment could not be matched against bank records. Please recheck the screenshot and optional UTR, then resubmit.';
     try {
       const res = await api.verifyPayment(targetId, 'reject', finalReason);
       setOrders((prev) => prev.map((o) => (o.id === targetId ? res.order : o)));
