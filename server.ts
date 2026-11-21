@@ -67,10 +67,7 @@ const RAZORPAY_MODE = process.env.RAZORPAY_MODE === 'test' || process.env.RAZORP
 const razorpayKeyMatchesMode = RAZORPAY_MODE === 'test'
   ? Boolean(RAZORPAY_KEY_ID?.startsWith('rzp_test_'))
   : RAZORPAY_MODE === 'live' ? Boolean(RAZORPAY_KEY_ID?.startsWith('rzp_live_')) : false;
-const RAZORPAY_ENABLED = process.env.RAZORPAY_ENABLED === 'true'
-  && Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET && RAZORPAY_WEBHOOK_SECRET)
-  && razorpayKeyMatchesMode
-  && (RAZORPAY_MODE !== 'live' || process.env.RAZORPAY_LIVE_APPROVED === 'true');
+const RAZORPAY_ENABLED = false; // CAMPORA uses manual UPI only; no gateway fees.
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY. Configure the server-side Supabase secret key.');
