@@ -6,7 +6,7 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const gmailTransporter = GMAIL_USER && GMAIL_APP_PASSWORD
   ? nodemailer.createTransport({
       service: 'gmail',
-      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD.replace(/\\s/g, '') },
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD.replace(/\s/g, '') },
       connectionTimeout: 15000,
       greetingTimeout: 15000,
       socketTimeout: 20000,
