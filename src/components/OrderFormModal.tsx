@@ -538,11 +538,11 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                     <h4 className="text-lg font-bold text-white mb-3 text-center">Complete Your UPI Payment</h4>
                     <ManualPaymentSection
                       order={createdOrderSummary}
-                      onPaymentSubmitted={async (utr, screenshot) => {
+                      onPaymentSubmitted={async (utr, screenshot, screenshotName) => {
                         const result = await api.submitPaymentProof(createdOrderSummary.id, {
                           utrNumber: utr,
                           screenshotUrl: screenshot,
-                          screenshotName: screenshot ? 'Receipt_Proof.png' : undefined,
+                          screenshotName,
                         });
                         setCreatedOrderSummary(result.order);
                         setPaymentProofSubmitted(true);
