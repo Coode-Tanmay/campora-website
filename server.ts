@@ -2126,6 +2126,18 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
   });
 });
 
+// Admin export of order metadata for an offline backup. Private file bytes remain in Supabase Storage.
+app.get('/api/admin/backup', requireAdmin, (_req: RequestWithUser, res: Response) => {
+  const backupOrders = ordersStore.map((order) => ({
+    ...order,
+    collegeTemplateFile: order.collegeTemplateFile ? (({ storagePath, downloadUrl, dataUrl, ...file }) => file)(order.collegeTemplateFile) : undefined,
+    referenceFiles: (order.referenceFiles || []).map(({ storagePath, downloadUrl, dataUrl, ...file }) => file),
+    paymentDetails: order.paymentDetails ? (({ screenshotPath, screenshotUrl, ...payment }) => payment)(order.paymentDetails) : undefined,
+    deliverables: (order.deliverables || []).map(({ storagePath, downloadUrl, ...file }) => file),
+  }));
+  res.json({ exportedAt: new Date().toISOString(), note: 'Order metadata backup only. Uploaded file binaries remain in private Supabase Storage.', orders: backupOrders });
+});
+
 // Admin Private Notes
 app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
