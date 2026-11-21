@@ -614,6 +614,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         )}
                       </div>
                       <p className="text-xs text-zinc-400 mt-1">Topic: <strong className="text-zinc-200">{activeOrder.topic}</strong></p>
+                      {activeOrder.deadline.toLowerCase().includes('urgent') && <span className="inline-flex mt-2 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold">URGENT DEADLINE</span>}
                     </div>
 
                     <div className="text-right">
@@ -709,6 +710,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <button
                         id="btn-admin-in-progress"
                         onClick={handleMarkInProgress}
+                        disabled={activeOrder.paymentStatus !== 'paid'}
                         className="px-3 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-semibold border border-amber-500/30 flex items-center gap-1.5 transition-colors"
                       >
                         <Clock className="w-3.5 h-3.5" /> Mark In Progress
@@ -718,6 +720,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <button
                         id="btn-admin-review"
                         onClick={handleMarkReview}
+                        disabled={activeOrder.paymentStatus !== 'paid'}
                         className="px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-semibold border border-purple-500/30 flex items-center gap-1.5 transition-colors"
                       >
                         <Eye className="w-3.5 h-3.5" /> Move to Review
