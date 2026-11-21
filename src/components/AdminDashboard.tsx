@@ -100,7 +100,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [files, setFiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
-  const [manageOrdersTab, setManageOrdersTab] = useState<'live' | 'in_progress' | 'delayed' | 'cancelled' | 'refund_completed'>('live');
+  const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'cancelled' | 'refund_completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
   const [copiedUtr, setCopiedUtr] = useState(false);
@@ -352,6 +352,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     const isDelayed = !isCancelled && ord.status !== 'completed' && !isRefundCompleted
       && Number.isFinite(createdAt) && Date.now() > deadlineAt;
 
+    if (manageOrdersTab === 'all') return true;
     if (manageOrdersTab === 'cancelled') return isCancelled && !isRefundCompleted;
     if (manageOrdersTab === 'refund_completed') return isRefundCompleted;
     if (manageOrdersTab === 'in_progress') return isInProgress && !isCancelled;
@@ -361,6 +362,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   });
 
   const manageOrderTabCounts = {
+    all: orders.length,
     live: orders.filter((ord) => {
       const createdAt = new Date(ord.createdAt).getTime();
       const delayed = ord.status !== 'cancelled' && ord.status !== 'completed'
@@ -630,6 +632,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
                   {([
+                    { id: 'all', label: 'All Orders' },
                     { id: 'live', label: 'Live Orders' },
                     { id: 'in_progress', label: 'In Progress' },
                     { id: 'delayed', label: 'Delayed Orders' },
