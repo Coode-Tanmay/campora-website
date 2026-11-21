@@ -46,6 +46,45 @@ import { ScreenshotPreviewModal } from './ScreenshotPreviewModal';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
+const getDeadlineDurationMs = (deadline: string): number => {
+  if (/1\s*[-–]\s*3\s*hours?/i.test(deadline) || /1\s*[-–]\s*3\s*hrs?/i.test(deadline)) return 3 * 60 * 60 * 1000;
+  if (/12\s*[-–]\s*24/i.test(deadline)) return 24 * 60 * 60 * 1000;
+  if (/24\s*[-–]\s*48/i.test(deadline)) return 48 * 60 * 60 * 1000;
+  if (/3\s*\+\s*days?/i.test(deadline)) return 72 * 60 * 60 * 1000;
+  return 24 * 60 * 60 * 1000;
+};
+
+const UrgentDeadlineCountdown: React.FC<{ order: CamporaOrder }> = ({ order }) => {
+  const [remainingMs, setRemainingMs] = useState(() => {
+    const createdAt = new Date(order.createdAt).getTime();
+    return Number.isFinite(createdAt) ? Math.max(0, createdAt + getDeadlineDurationMs(order.deadline) - Date.now()) : 0;
+  });
+
+  useEffect(() => {
+    const update = () => {
+      const createdAt = new Date(order.createdAt).getTime();
+      const deadlineAt = createdAt + getDeadlineDurationMs(order.deadline);
+      setRemainingMs(Number.isFinite(deadlineAt) ? Math.max(0, deadlineAt - Date.now()) : 0);
+    };
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [order.createdAt, order.deadline]);
+
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const format = (value: number) => String(value).padStart(2, '0');
+
+  return (
+    <span className="inline-flex items-center gap-1.5 mt-2 ml-2 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold tabular-nums">
+      <Clock className="w-3 h-3" />
+      {remainingMs > 0 ? `Time left ${format(hours)}:${format(minutes)}:${format(seconds)}` : 'Deadline reached'}
+    </span>
+  );
+};
+
 interface AdminDashboardProps {
   onCloseAdmin: () => void;
 }
@@ -638,7 +677,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         )}
                       </div>
                       <p className="text-xs text-zinc-400 mt-1">Topic: <strong className="text-zinc-200">{activeOrder.topic}</strong></p>
-                      {activeOrder.deadline.toLowerCase().includes('urgent') && <span className="inline-flex mt-2 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold">URGENT DEADLINE</span>}
+                      {activeOrder.deadline.toLowerCase().includes('urgent') && (
+                        <div className="flex flex-wrap items-center">
+                          <span className="inline-flex mt-2 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold">URGENT DEADLINE</span>
+                          <UrgentDeadlineCountdown order={activeOrder} />
+                        </div>
+                      )}
                     </div>
 
                     <div className="text-right">
@@ -841,7 +885,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <Upload className="w-4 h-4" /> Upload Completed Deliverable
                     </div>
 
-                    {activeOrder.paymentStatus !== 'paid' && <p className="text-[11px] text-amber-300">Deliverable upload unlocks after payment is manually verified.</p>}
+                    {activeOrder.paymentStatus !== 'paid' && (
+                      <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200 space-y-1">
+                        <p className="font-bold">Upload locked — payment not verified</p>
+                        <p>Current payment status: <strong>{activeOrder.paymentStatus.replace('_', ' ')}</strong>. Verify the customer's payment in the Payment Verification section first. The upload button will unlock automatically after confirmation.</p>
+                      </div>
+                    )}
                     <form onSubmit={handleUploadDeliverable} className="space-y-2.5">
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                         <div className="sm:col-span-2">
