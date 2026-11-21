@@ -130,6 +130,13 @@ export const api = {
     });
   },
 
+  async cancelCustomerOrder(orderId: string): Promise<{ success: boolean; order: CamporaOrder }> {
+    return fetchJson<{ success: boolean; order: CamporaOrder }>(`${API_BASE}/customer/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
   async submitPaymentProof(orderId: string, payload: { utrNumber: string; screenshotUrl?: string; screenshotName?: string; screenshotSize?: string }): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
     return fetchJson<{ success: boolean; order: CamporaOrder; message: string }>(`${API_BASE}/customer/orders/${orderId}/payment`, {
       method: 'POST',
