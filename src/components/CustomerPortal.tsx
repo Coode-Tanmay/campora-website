@@ -646,8 +646,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                 ))}
               </div>
             </div>
-
-            </div>
             ) : (
               <div className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-200">Live order tracking unlocks after CAMPORA manually verifies your payment. Your order has been safely received.</div>
             )}
