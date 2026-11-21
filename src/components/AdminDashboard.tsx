@@ -830,16 +830,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                           />
                         </div>
                         <div>
-                          <select
-                            value={newDeliverableType}
-                            onChange={(e) => setNewDeliverableType(e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white"
-                          >
-                            <option value="PPTX">PowerPoint (.pptx)</option>
-                            <option value="PDF">Document (.pdf)</option>
-                            <option value="DOCX">Word (.docx)</option>
-                            <option value="ZIP">Archive (.zip)</option>
-                          </select>
+                          <span className="w-full block bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-400">File type detected from filename</span>
                         </div>
                       </div>
 
@@ -851,7 +842,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                           className="block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-zinc-700"
                         />
                         <p className="text-[10px] text-zinc-500">
-                          {newDeliverableFile ? `Selected: ${newDeliverableFile.name} (${(newDeliverableFile.size / (1024 * 1024)).toFixed(2)} MB)` : 'Select the actual deliverable file (PDF, Office, image, ZIP, text or CSV; maximum 15 MB).'}
+                          {newDeliverableFile ? `Selected: ${newDeliverableFile.name} (${(newDeliverableFile.size / (1024 * 1024)).toFixed(2)} MB)` : 'Select the actual deliverable file (PDF, PPT/PPTX, Word, Excel, image, ZIP, text or CSV; maximum 15 MB).'}
                         </p>
                       </div>
 
@@ -936,7 +927,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white tracking-tight">Manual UPI Payment Verification Desk</h2>
-                <p className="text-xs text-zinc-400 mt-0.5">Verify student UTR numbers and screenshots against official SBI bank records before activating design work.</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Check each submitted screenshot and optional UTR against your bank records before activating design work.</p>
               </div>
               <div className="text-xs text-amber-400 font-mono font-bold bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20">
                 UPI ID: {UPI_ID}
