@@ -2082,8 +2082,8 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
   }
 
   const order = ordersStore[orderIndex];
-  if (order.paymentStatus !== 'paid') {
-    res.status(409).json({ error: 'Payment must be verified before uploading a customer deliverable.' });
+  if (order.paymentStatus !== 'paid' || ['cancelled', 'rejected'].includes(order.status)) {
+    res.status(409).json({ error: 'Payment must be verified and the order must remain active before uploading a customer deliverable.' });
     return;
   }
   let parsedFile: { buffer: Buffer; mimeType: string };
