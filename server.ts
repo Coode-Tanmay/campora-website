@@ -1230,7 +1230,7 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
 });
 
 
-const APP_PUBLIC_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').replace(/\\/$/, '');
+const APP_PUBLIC_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').replace(/\/$/, '');
 const hashOneTimeToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 app.get('/api/auth/customer/verify-email', async (req: Request, res: Response) => {
