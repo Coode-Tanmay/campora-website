@@ -51,6 +51,7 @@ export type OrderStatus =
 
 export type PaymentStatus = 'pending' | 'verification_pending' | 'paid' | 'awaiting_quote' | 'rejected';
 export type PaymentProofStatus = 'not_submitted' | 'submitted';
+export type RefundStatus = 'requested' | 'processing' | 'refunded';
 
 export type QuoteStatus = 'not_required' | 'pending' | 'sent' | 'accepted';
 
@@ -160,6 +161,9 @@ export interface CamporaOrder {
   paymentProofStatus?: PaymentProofStatus;
   paymentDetails?: PaymentVerificationDetails;
   paymentGateway?: PaymentGatewayDetails;
+  refundStatus?: RefundStatus;
+  refundRequestedAt?: string;
+  refundedAt?: string;
   
   // Status Tracking
   status: OrderStatus;
