@@ -7,7 +7,7 @@ export const UPI_ID = 'tanmayvbhagat-1@oksbi';
 
 interface ManualPaymentSectionProps {
   order: CamporaOrder;
-  onPaymentSubmitted: (utrNumber: string, screenshotUrl?: string) => Promise<void> | void;
+  onPaymentSubmitted: (utrNumber: string, screenshotUrl: string, screenshotName: string) => Promise<void> | void;
 }
 
 export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
@@ -82,7 +82,7 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
 
     setIsSubmitting(true);
     try {
-      await onPaymentSubmitted(cleanUtr, screenshotPreview);
+      await onPaymentSubmitted(cleanUtr, screenshotPreview, screenshotName);
     } catch (err: any) {
       setError(err.message || 'Failed to submit payment details.');
     } finally {
