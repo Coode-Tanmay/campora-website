@@ -105,6 +105,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const [orderCompletedSuccess, setOrderCompletedSuccess] = useState(false);
   const [createdOrderSummary, setCreatedOrderSummary] = useState<CamporaOrder | null>(null);
   const [paymentProofSubmitted, setPaymentProofSubmitted] = useState(false);
+  const [isCancellingOrder, setIsCancellingOrder] = useState(false);
+  const [orderCancelled, setOrderCancelled] = useState(false);
 
   // Validation Error Message
   const [stepError, setStepError] = useState('');
@@ -386,6 +388,24 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     }
   };
 
+  const handleCancelOrder = async () => {
+    if (!createdOrderSummary || isCancellingOrder) return;
+    const confirmed = window.confirm('Are you sure you want to cancel this order? The entire order will be marked as cancelled and cannot be resumed.');
+    if (!confirmed) return;
+
+    setIsCancellingOrder(true);
+    setStepError('');
+    try {
+      const result = await api.cancelCustomerOrder(createdOrderSummary.id);
+      setCreatedOrderSummary(result.order);
+      setOrderCancelled(true);
+    } catch (error: any) {
+      setStepError(error?.message || 'We could not cancel this order. Please try again.');
+    } finally {
+      setIsCancellingOrder(false);
+    }
+  };
+
   const handleFinishAndClose = () => {
     setOrderCompletedSuccess(false);
     onClose();
@@ -499,13 +519,19 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               </div>
             </div>
 
-            {!createdOrderSummary.requiresReview && paymentMethod === 'upi' && createdOrderSummary.finalPrice > 0 && (
+            {orderCancelled ? (
+              <div className="max-w-2xl mx-auto w-full p-5 rounded-2xl bg-red-500/10 border border-red-500/30 text-center space-y-2">
+                <AlertCircle className="w-8 h-8 text-red-400 mx-auto" />
+                <h4 className="font-bold text-red-300">Order Cancelled</h4>
+                <p className="text-xs text-[#B8B8B8]">Your order has been cancelled successfully. It will appear as cancelled in your order history.</p>
+              </div>
+            ) : !createdOrderSummary.requiresReview && paymentMethod === 'upi' && createdOrderSummary.finalPrice > 0 && (
               <div className="max-w-2xl mx-auto w-full text-left">
                 {paymentProofSubmitted ? (
-                  <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-2">
-                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                    <h4 className="font-bold text-emerald-300">Payment proof submitted</h4>
-                    <p className="text-xs text-[#B8B8B8]">Your UTR has been sent to CAMPORA for manual verification. Your order will proceed after the payment is verified.</p>
+                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-amber-400 mx-auto" />
+                    <h4 className="font-bold text-amber-300">Payment verification pending</h4>
+                    <p className="text-xs text-[#B8B8B8]">Your UTR has been submitted. The Live Order Tracker will be available after CAMPORA admin verifies your payment.</p>
                   </div>
                 ) : (
                   <>
@@ -513,11 +539,12 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                     <ManualPaymentSection
                       order={createdOrderSummary}
                       onPaymentSubmitted={async (utr, screenshot) => {
-                        await api.submitPaymentProof(createdOrderSummary.id, {
+                        const result = await api.submitPaymentProof(createdOrderSummary.id, {
                           utrNumber: utr,
                           screenshotUrl: screenshot,
                           screenshotName: screenshot ? 'Receipt_Proof.png' : undefined,
                         });
+                        setCreatedOrderSummary(result.order);
                         setPaymentProofSubmitted(true);
                       }}
                     />
@@ -527,13 +554,34 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
             )}
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <button
-                id="btn-view-tracking-dashboard"
-                onClick={handleFinishAndClose}
-                className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
-              >
-                Go to Live Order Tracker
-              </button>
+              {!createdOrderSummary.requiresReview && !paymentProofSubmitted && !orderCancelled && (
+                <button
+                  type="button"
+                  id="btn-cancel-payment-order"
+                  onClick={handleCancelOrder}
+                  disabled={isCancellingOrder}
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-full border border-red-500/40 text-red-300 hover:bg-red-500/10 text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {isCancellingOrder ? 'Cancelling Order…' : 'Cancel Payment & Order'}
+                </button>
+              )}
+              {(createdOrderSummary.requiresReview || orderCancelled) ? (
+                <button
+                  id="btn-view-tracking-dashboard"
+                  onClick={handleFinishAndClose}
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
+                >
+                  {orderCancelled ? 'Close' : 'Go to Order Dashboard'}
+                </button>
+              ) : paymentProofSubmitted ? (
+                <button
+                  type="button"
+                  onClick={handleFinishAndClose}
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
+                >
+                  Close — Await Verification
+                </button>
+              ) : null}
             </div>
           </div>
         ) : (
