@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import { INITIAL_ORDERS, SERVICES_DATA } from './src/data/mockData';
 import { CamporaOrder, AuthUser, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep, OrderAttachment } from './src/types';
+import { sendVerificationEmail, sendPasswordResetEmail, sendOrderConfirmationEmail, sendPaymentUpdateEmail, sendOrderStatusEmail, sendDeliveryEmail } from './src/server/email';
 
 dotenv.config();
 
@@ -136,7 +137,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Database-backed application state. The server keeps a short-lived in-process cache,
 // but every mutation is persisted to Supabase before the API reports success.
 let ordersStore: CamporaOrder[] = [];
-interface StoredUser extends AuthUser { passwordHash?: string; }
+interface StoredUser extends AuthUser { passwordHash?: string; emailVerified?: boolean; emailVerificationTokenHash?: string; emailVerificationExpiresAt?: number; passwordResetTokenHash?: string; passwordResetExpiresAt?: number; }
 let usersStore: StoredUser[] = [];
 let stateWriteQueue: Promise<unknown> = Promise.resolve();
 
@@ -447,6 +448,7 @@ const adminLoginLimiter = createRateLimiter({
   key: (req, ip) => `${ip}:${String(req.body?.username || 'unknown').trim().toLowerCase()}`,
   message: 'Too many administrator sign-in attempts. Please wait 15 minutes and try again.',
 });
+const emailActionLimiter = createRateLimiter({ name: 'customer-email-actions', windowMs: 60 * 60 * 1000, max: 5, key: (_req, ip) => ip, message: 'Too many email requests. Please wait before trying again.' });
 const customerLoginLimiter = createRateLimiter({
   name: 'customer-login',
   windowMs: 15 * 60 * 1000,
@@ -838,6 +840,7 @@ app.get(['/auth/callback/google', '/auth/callback/google/', '/auth/callback', '/
         avatar: profile.picture,
         role: 'customer',
         authProvider: 'google',
+        emailVerified: true,
         createdAt: new Date().toISOString().split('T')[0],
       };
       usersStore.push(newCustomer);
@@ -1009,6 +1012,7 @@ app.get(['/auth/callback/microsoft', '/auth/callback/microsoft/'], async (req: R
         email,
         role: 'customer',
         authProvider: 'microsoft',
+        emailVerified: true,
         createdAt: new Date().toISOString().split('T')[0],
       };
       usersStore.push(newCustomer);
@@ -1144,6 +1148,7 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
 
   const normalizedEmail = email.trim().toLowerCase();
   let user = usersStore.find((u) => u.email.toLowerCase() === normalizedEmail);
+  let verificationToken: string | undefined;
 
   if (!user) {
     if (typeof name !== 'string' || !name.trim()) {
@@ -1166,7 +1171,11 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
       college: college?.trim() || '',
       authProvider: 'email',
       createdAt: new Date().toISOString(),
+      emailVerified: false,
     };
+    verificationToken = randomBytes(32).toString('hex');
+    newCustomer.emailVerificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
+    newCustomer.emailVerificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
     usersStore.push(newCustomer);
     user = newCustomer;
   } else {
@@ -1174,12 +1183,24 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
       res.status(401).json({ error: 'Invalid email or password.' });
       return;
     }
+    // Existing accounts without this field remain verified; only new registrations require verification.
+    if (user.emailVerified === false) {
+      verificationToken = randomBytes(32).toString('hex');
+      user.emailVerificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
+      user.emailVerificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    }
     if (name && !user.name) user.name = name.trim();
     if (whatsapp && !user.whatsapp) user.whatsapp = whatsapp.trim();
     if (college && !user.college) user.college = college.trim();
   }
 
   await persistState();
+
+  if (user.emailVerified === false) {
+    const sent = verificationToken ? await sendVerificationEmail(user.email, user.name, verificationToken) : false;
+    res.status(sent ? 200 : 503).json({ success: sent, verificationRequired: true, error: sent ? undefined : 'Your account is saved, but the verification email could not be sent. Please try signing in again later or contact support.' });
+    return;
+  }
 
   const customerPayload: AuthUser = {
     id: user.id,
@@ -1206,6 +1227,68 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
     success: true,
     user: customerPayload,
   });
+});
+
+
+const APP_PUBLIC_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').replace(/\\/$/, '');
+const hashOneTimeToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+app.get('/api/auth/customer/verify-email', async (req: Request, res: Response) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!/^[a-f0-9]{64}$/.test(token)) { res.status(400).send('<h2>Invalid verification link</h2>'); return; }
+  const user = usersStore.find((item) => item.emailVerificationTokenHash === hashOneTimeToken(token)
+    && typeof item.emailVerificationExpiresAt === 'number' && item.emailVerificationExpiresAt > Date.now());
+  if (!user) {
+    res.status(400).send('<!doctype html><html><body style="font-family:Arial;background:#0b0b0b;color:white;padding:48px;text-align:center"><h2>This verification link has expired</h2><p>Sign in to CAMPORA to request a fresh link.</p><a style="color:#d4a72c" href="' + APP_PUBLIC_URL + '">Open CAMPORA</a></body></html>');
+    return;
+  }
+  user.emailVerified = true;
+  delete user.emailVerificationTokenHash;
+  delete user.emailVerificationExpiresAt;
+  await persistState();
+  res.send('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Arial;background:#0b0b0b;color:white;padding:48px 20px;text-align:center"><div style="max-width:460px;margin:8vh auto;background:#171717;border:1px solid #d4a72c;border-radius:18px;padding:36px"><h1 style="color:#d4a72c">Email verified</h1><p>Your CAMPORA account is now active. You can sign in securely.</p><a style="display:inline-block;background:#d4a72c;color:#111;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold" href="' + APP_PUBLIC_URL + '">Continue to CAMPORA</a></div></body></html>');
+});
+
+app.post('/api/auth/customer/password-reset/request', emailActionLimiter, async (req: Request, res: Response) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (email.length <= 254 && email.includes('@')) {
+    const user = usersStore.find((item) => item.email.toLowerCase() === email && Boolean(item.passwordHash) && item.role === 'customer');
+    if (user) {
+      const token = randomBytes(32).toString('hex');
+      user.passwordResetTokenHash = hashOneTimeToken(token);
+      user.passwordResetExpiresAt = Date.now() + 30 * 60 * 1000;
+      await persistState();
+      await sendPasswordResetEmail(user.email, user.name, token);
+    }
+  }
+  res.json({ success: true, message: 'If an account with that email exists, a password reset link will be sent.' });
+});
+
+app.get('/api/auth/customer/reset-password-page', (req: Request, res: Response) => {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!/^[a-f0-9]{64}$/.test(token)) { res.status(400).send('<h2>Invalid reset link</h2>'); return; }
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reset CAMPORA password</title></head><body style="margin:0;background:#0b0b0b;color:#fff;font-family:Arial;padding:32px 16px"><main style="max-width:440px;margin:8vh auto;background:#171717;border:1px solid #d4a72c;border-radius:18px;padding:30px"><div style="color:#d4a72c;font-weight:bold;letter-spacing:4px">CAMPORA</div><h1>Set a new password</h1><p style="color:#a1a1aa">Choose a strong password with at least 8 characters.</p><form id="reset"><input id="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required placeholder="New password" style="box-sizing:border-box;width:100%;padding:13px;border-radius:8px;background:#0b0b0b;border:1px solid #444;color:white;margin:10px 0"><input id="confirm" type="password" minlength="8" maxlength="128" autocomplete="new-password" required placeholder="Confirm password" style="box-sizing:border-box;width:100%;padding:13px;border-radius:8px;background:#0b0b0b;border:1px solid #444;color:white;margin:10px 0"><button style="width:100%;padding:13px;background:#d4a72c;border:0;border-radius:8px;font-weight:bold;margin-top:10px">Update password</button></form><p id="message" role="status" style="color:#d4d4d8"></p></main><script>document.getElementById('reset').addEventListener('submit',async function(e){e.preventDefault();const p=document.getElementById('password').value;const c=document.getElementById('confirm').value;const m=document.getElementById('message');if(p!==c){m.textContent='Passwords do not match.';return;}const r=await fetch('/api/auth/customer/password-reset/complete',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({token:${JSON.stringify(token)},password:p})});const d=await r.json().catch(()=>({}));m.textContent=r.ok?'Password updated. You can now sign in to CAMPORA.':(d.error||'This reset link is invalid or expired.');document.getElementById('reset').style.display=r.ok?'none':'block';});</script></body></html>`);
+});
+
+app.post('/api/auth/customer/password-reset/complete', emailActionLimiter, async (req: Request, res: Response) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!/^[a-f0-9]{64}$/.test(token) || password.length < 8 || password.length > 128) {
+    res.status(400).json({ error: 'Provide a valid reset link and a password between 8 and 128 characters.' });
+    return;
+  }
+  const user = usersStore.find((item) => item.passwordResetTokenHash === hashOneTimeToken(token)
+    && typeof item.passwordResetExpiresAt === 'number' && item.passwordResetExpiresAt > Date.now());
+  if (!user) { res.status(400).json({ error: 'This password reset link is invalid or expired. Please request another one.' }); return; }
+  user.passwordHash = await bcrypt.hash(password, 12);
+  user.emailVerified = true;
+  delete user.passwordResetTokenHash;
+  delete user.passwordResetExpiresAt;
+  delete user.emailVerificationTokenHash;
+  delete user.emailVerificationExpiresAt;
+  await persistState();
+  res.json({ success: true });
 });
 
 // This endpoint is intentionally disabled. OAuth identities must be established only
@@ -1483,6 +1566,7 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
     ordersStore.unshift(newOrder);
     insertedOrder = true;
     await persistState();
+    void sendOrderConfirmationEmail(newOrder.customerEmail, newOrder.customerName, newOrder.id, newOrder.serviceName);
     const responseOrder = await hydrateOrderForResponse(newOrder);
     res.status(201).json({ success: true, order: responseOrder });
   } catch (error) {
@@ -1599,6 +1683,7 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, a
     await removePrivateFiles([previousScreenshotPath]);
   }
 
+  void sendPaymentUpdateEmail(user.email, user.name, updatedOrder.id, 'received');
   const hydratedOrder = await hydrateOrderForResponse(updatedOrder);
   const { adminNotes, ...customerSafeOrder } = hydratedOrder;
   res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
@@ -1768,6 +1853,10 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
 
   ordersStore[orderIndex] = updatedOrder;
   await persistState();
+  if (['approved', 'rejected', 'cancelled', 'in_progress', 'completed'].includes(status)) {
+    void sendOrderStatusEmail(order.customerEmail, order.customerName, order.id, status, status === 'rejected' ? rejectionReason : status === 'cancelled' ? cancellationReason : undefined);
+    if (status === 'completed') void sendDeliveryEmail(order.customerEmail, order.customerName, order.id);
+  }
   res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
 });
 
@@ -1831,6 +1920,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     ordersStore[orderIndex] = updatedOrder;
     await persistState();
+    void sendPaymentUpdateEmail(order.customerEmail, order.customerName, order.id, 'confirmed');
     res.json({ success: true, message: `Payment verified for ₹${payableAmount}. Order is now in progress.`, order: await hydrateOrderForResponse(updatedOrder) });
     return;
   }
@@ -1867,6 +1957,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
 
     ordersStore[orderIndex] = updatedOrder;
     await persistState();
+    void sendPaymentUpdateEmail(order.customerEmail, order.customerName, order.id, 'rejected');
     res.json({ success: true, message: 'Payment marked as rejected.', order: await hydrateOrderForResponse(updatedOrder) });
     return;
   }
@@ -1944,6 +2035,7 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
     return;
   }
 
+  void sendDeliveryEmail(order.customerEmail, order.customerName, order.id);
   res.json({
     success: true,
     message: 'Completed deliverable uploaded successfully.',

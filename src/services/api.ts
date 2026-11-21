@@ -90,12 +90,16 @@ export const api = {
     return res;
   },
 
-  async customerLogin(data: { email: string; password?: string; name?: string; whatsapp?: string; college?: string }): Promise<{ success: boolean; user: AuthUser; token: string }> {
-    const res = await fetchJson<{ success: boolean; user: AuthUser; token: string }>(`${API_BASE}/auth/customer/login`, {
+  async customerLogin(data: { email: string; password?: string; name?: string; whatsapp?: string; college?: string }): Promise<{ success: boolean; user?: AuthUser; token?: string; verificationRequired?: boolean; error?: string }> {
+    const res = await fetchJson<{ success: boolean; user?: AuthUser; token?: string; verificationRequired?: boolean; error?: string }>(`${API_BASE}/auth/customer/login`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
     return res;
+  },
+
+  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson<{ success: boolean; message: string }>(`${API_BASE}/auth/customer/password-reset/request`, { method: 'POST', body: JSON.stringify({ email }) });
   },
 
   async customerOAuth(data: { provider: 'google' | 'microsoft'; email: string; name?: string; college?: string; whatsapp?: string; avatar?: string }): Promise<{ success: boolean; user: AuthUser; token: string }> {

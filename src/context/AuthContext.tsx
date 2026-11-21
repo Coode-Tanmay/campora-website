@@ -7,7 +7,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isCustomer: boolean;
   isLoading: boolean;
-  loginCustomer: (data: { email: string; password?: string; name?: string; whatsapp?: string; college?: string }) => Promise<{ success: boolean; user: AuthUser }>;
+  loginCustomer: (data: { email: string; password?: string; name?: string; whatsapp?: string; college?: string }) => Promise<{ success: boolean; user?: AuthUser; verificationRequired?: boolean; error?: string }>;
   loginAdmin: (username: string, password: string) => Promise<{ success: boolean; user: AuthUser }>;
   oauthLogin: (data: { provider: 'google' | 'microsoft'; email: string; name?: string; college?: string; whatsapp?: string; avatar?: string }) => Promise<{ success: boolean; user: AuthUser }>;
   setUserDirectly: (user: AuthUser, token?: string) => void;
@@ -44,7 +44,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
     try {
       const res = await api.customerLogin(data);
-      setUser(res.user);
+      if (res.user) setUser(res.user);
       return res;
     } finally {
       setIsLoading(false);
