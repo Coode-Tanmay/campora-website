@@ -70,6 +70,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   useEffect(() => {
     fetchOrders();
     setRazorpayEnabled(false); // CAMPORA uses direct UPI only to avoid gateway fees.
+    // Keep customer order cards and deliverables in sync with admin verification
+    // and upload actions without requiring a manual browser refresh.
+    const refreshCustomerOrders = () => {
+      if (document.visibilityState === 'visible') void fetchOrders();
+    };
+    const interval = window.setInterval(refreshCustomerOrders, 10000);
+    const handleFocus = () => { void fetchOrders(); };
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handleCancelUnpaidOrder = async (order: CamporaOrder) => {
