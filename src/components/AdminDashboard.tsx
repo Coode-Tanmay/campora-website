@@ -61,6 +61,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [searchQuery, setSearchQuery] = useState('');
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
   const [copiedUtr, setCopiedUtr] = useState(false);
+  const [paymentDeskFilter, setPaymentDeskFilter] = useState<'all' | 'not_submitted' | 'submitted' | 'paid'>('all');
   
   // Modals / Reason inputs
   const [isRejecting, setIsRejecting] = useState(false);
@@ -225,15 +226,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
       triggerToast('Please provide a title and select the actual deliverable file.');
       return;
     }
-    if (newDeliverableFile.size > 5 * 1024 * 1024) {
-      triggerToast('Deliverable files must be 5 MB or smaller.');
+    if (newDeliverableFile.size > 15 * 1024 * 1024) {
+      triggerToast('Deliverable files must be 15 MB or smaller.');
       return;
     }
-    const selectedExtension = newDeliverableFile.name.split('.').pop()?.toUpperCase();
-    if (selectedExtension !== newDeliverableType) {
-      triggerToast(`The selected file is .${selectedExtension || 'unknown'}, but the file type selector is set to ${newDeliverableType}.`);
-      return;
-    }
+    const selectedExtension = newDeliverableFile.name.split('.').pop()?.toUpperCase() || 'FILE';
     try {
       const res = await api.uploadDeliverable(activeOrder.id, {
         title: newDeliverableTitle.trim(),
@@ -260,6 +257,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
       triggerToast(err.message || 'Failed to save admin notes.');
     }
   };
+
+  // Payment desk shows unpaid orders and paid records; proof status is distinct from payment status.
+  const paymentDeskOrders = orders.filter((ord) => {
+    if (paymentDeskFilter === 'not_submitted') return ord.paymentStatus === 'pending' && !ord.paymentDetails?.screenshotName;
+    if (paymentDeskFilter === 'submitted') return ord.paymentStatus === 'verification_pending';
+    if (paymentDeskFilter === 'paid') return ord.paymentStatus === 'paid';
+    return ord.paymentStatus !== 'awaiting_quote';
+  });
 
   // Filter orders for manage/track tabs
   const filteredOrders = orders.filter((ord) => {
@@ -632,6 +637,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                     </div>
                   </div>
 
+                  {/* Complete customer brief and downloadable source files */}
+                  <div className="p-4 rounded-xl bg-zinc-900/70 border border-amber-500/20 space-y-3">
+                    <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Order Specifications & Uploaded Materials</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800">
+                        <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1">Work Details</div>
+                        <div className="text-white font-semibold">{activeOrder.topic}</div>
+                        <div className="text-zinc-300 mt-1">{activeOrder.pagesOrSlides} slides/pages • {activeOrder.deadline}</div>
+                        <p className="text-zinc-400 mt-2 whitespace-pre-wrap">{activeOrder.instructions || 'No additional instructions.'}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800">
+                        <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1">College / University Template</div>
+                        {activeOrder.collegeTemplateFile ? (
+                          <a href={activeOrder.collegeTemplateFile.downloadUrl || '#'} download className="inline-flex items-center gap-2 text-amber-300 hover:text-amber-200 underline" onClick={(e) => { if (!activeOrder.collegeTemplateFile?.downloadUrl) e.preventDefault(); }}>
+                            <Download className="w-3.5 h-3.5" /> {activeOrder.collegeTemplateFile.name} — Download
+                          </a>
+                        ) : <span className="text-zinc-300">No template — Standard Format</span>}
+                        {activeOrder.templateInstructions && <p className="text-zinc-400 mt-2 whitespace-pre-wrap">{activeOrder.templateInstructions}</p>}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-lg bg-zinc-950/70 border border-zinc-800">
+                      <div className="text-[10px] uppercase font-bold text-zinc-500 mb-2">Reference Materials & Rough Notes ({activeOrder.referenceFiles?.length || 0})</div>
+                      {activeOrder.referenceFiles?.length ? (
+                        <div className="space-y-2">
+                          {activeOrder.referenceFiles.map((file) => (
+                            <div key={file.id} className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-zinc-200 truncate">{file.name} <span className="text-zinc-500">({file.size})</span></span>
+                              <a href={file.downloadUrl || '#'} download onClick={(e) => { if (!file.downloadUrl) e.preventDefault(); }} className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 hover:bg-amber-500/20">
+                                <Download className="w-3.5 h-3.5" /> Download
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <span className="text-zinc-500">No reference materials uploaded.</span>}
+                    </div>
+                  </div>
+
                   {/* Order Workflow Action Buttons */}
                   <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 space-y-3">
                     <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
@@ -786,12 +828,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <div className="space-y-1.5">
                         <input
                           type="file"
-                          accept=".pdf,.pptx,.docx,.zip"
+                          accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.zip,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv"
                           onChange={(e) => setNewDeliverableFile(e.target.files?.[0] || null)}
                           className="block w-full text-xs text-zinc-300 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-zinc-700"
                         />
                         <p className="text-[10px] text-zinc-500">
-                          {newDeliverableFile ? `Selected: ${newDeliverableFile.name} (${(newDeliverableFile.size / (1024 * 1024)).toFixed(2)} MB)` : 'Select the actual PDF, PPTX, DOCX or ZIP file (maximum 5 MB).'}
+                          {newDeliverableFile ? `Selected: ${newDeliverableFile.name} (${(newDeliverableFile.size / (1024 * 1024)).toFixed(2)} MB)` : 'Select the actual deliverable file (PDF, Office, image, ZIP, text or CSV; maximum 15 MB).'}
                         </p>
                       </div>
 
@@ -873,6 +915,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-2">
+              {([['all','All Orders'],['not_submitted','Proof Not Submitted'],['submitted','Proof Submitted'],['paid','Paid & Verified']] as const).map(([value,label]) => (
+                <button key={value} onClick={() => setPaymentDeskFilter(value)} className={`px-3 py-2 rounded-lg text-xs border ${paymentDeskFilter === value ? 'bg-amber-500 text-black border-amber-400 font-bold' : 'bg-zinc-900 text-zinc-300 border-zinc-800'}`}>{label}</button>
+              ))}
+            </div>
             <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -887,7 +934,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-                  {orders.map((ord) => (
+                  {paymentDeskOrders.map((ord) => (
                     <tr key={ord.id} className="hover:bg-zinc-900/50">
                       <td className="py-3.5 font-mono text-amber-400 font-bold">{ord.id}</td>
                       <td className="py-3.5">
@@ -907,7 +954,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <td className="py-3.5">
                         {ord.paymentDetails?.screenshotUrl || ord.paymentDetails?.screenshotName ? (
                           <button
-                            onClick={() => setPreviewScreenshotUrl(ord.paymentDetails?.screenshotUrl || 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80')}
+                            onClick={() => { if (ord.paymentDetails?.screenshotUrl) setPreviewScreenshotUrl(ord.paymentDetails.screenshotUrl); }}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs border border-zinc-700"
                           >
                             <FileImage className="w-3.5 h-3.5 text-amber-400" /> View Receipt
@@ -920,7 +967,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         {ord.paymentStatus === 'paid' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified & Paid</span>}
                         {ord.paymentStatus === 'verification_pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">Awaiting Approval</span>}
                         {ord.paymentStatus === 'rejected' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">Rejected</span>}
-                        {ord.paymentStatus === 'pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Pending Scan</span>}
+                        {ord.paymentStatus === 'pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Payment Proof Not Submitted</span>}
                       </td>
                       <td className="py-3.5 text-right space-x-2">
                         {ord.paymentStatus === 'verification_pending' && (
