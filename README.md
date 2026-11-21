@@ -74,9 +74,9 @@ Microsoft's redirect URI, if enabled later, must be:
 
 ## Transactional email
 
-- Transactional email prefers Gmail SMTP when `GMAIL_USER` and `GMAIL_APP_PASSWORD` are configured. Resend remains an optional fallback when both `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL` are configured.
-- For Gmail, use a Google App Password generated with 2-Step Verification; never use the normal Google account password. Keep it only in the backend host's secret settings.
-- New email/password account verification is enabled when either complete sender configuration is present. If Gmail SMTP fails, the mailer attempts the configured Resend fallback.
+- Transactional email prefers the Google Apps Script HTTPS relay when `GMAIL_APPS_SCRIPT_URL` and `GMAIL_APPS_SCRIPT_TOKEN` are configured. Resend remains an optional fallback when both `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL` are configured.
+- Deploy `scripts/campora-mail-relay.gs` as a Google Apps Script Web app that executes as the script owner and is accessible to anyone. Set the Script Property `CAMPORA_MAILER_TOKEN` to a long random secret, then configure the deployment URL and the same secret as `GMAIL_APPS_SCRIPT_URL` and `GMAIL_APPS_SCRIPT_TOKEN` in Render. The script sends through the owner's Gmail account over HTTPS, avoiding outbound SMTP restrictions on Render.
+- New email/password account verification is enabled when either complete relay configuration or a verified Resend sender is present. If the Apps Script relay fails, the mailer attempts the configured Resend fallback.
 - Verification links expire after 24 hours; password-reset links expire after 30 minutes. Only hashed one-time tokens are stored.
 - Emails include account verification, password reset, order receipt, payment proof/verification, order status and completion notifications.
 
