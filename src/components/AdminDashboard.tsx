@@ -323,12 +323,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     }
   };
 
-  // Payment desk shows unpaid orders and paid records; proof status is distinct from payment status.
+  // Include cancelled orders in All Orders and distinguish actual screenshot proof from legacy payment flags.
   const paymentDeskOrders = orders.filter((ord) => {
-    if (paymentDeskFilter === 'not_submitted') return ord.paymentStatus === 'pending' && !ord.paymentDetails?.screenshotName;
-    if (paymentDeskFilter === 'submitted') return ord.paymentStatus === 'verification_pending';
+    const hasProof = hasSubmittedPaymentScreenshot(ord);
+    if (paymentDeskFilter === 'not_submitted') return ord.paymentStatus !== 'paid' && !hasProof && ord.paymentStatus !== 'awaiting_quote';
+    if (paymentDeskFilter === 'submitted') return hasProof && ord.paymentStatus !== 'paid';
     if (paymentDeskFilter === 'paid') return ord.paymentStatus === 'paid';
-    return ord.paymentStatus !== 'awaiting_quote';
+    return true;
   });
 
   // Filter orders for manage/track tabs
@@ -829,19 +830,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         </span>
                       )}
                       {/* Manual payment confirmation remains for legacy UPI proof only. */}
-                      {activeOrder.paymentStatus === 'verification_pending' && !(activeOrder.paymentGateway?.provider === 'razorpay' && activeOrder.paymentGateway.status === 'created') && hasSubmittedPaymentScreenshot(activeOrder) && (
+                      {activeOrder.paymentStatus !== 'paid' && !(activeOrder.paymentGateway?.provider === 'razorpay' && activeOrder.paymentGateway.status === 'created') && activeOrder.paymentStatus !== 'awaiting_quote' && (
                         <button
                           id="btn-admin-confirm-pay"
                           onClick={() => handleConfirmPayment()}
                           className="px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-semibold flex items-center gap-1.5 transition-colors"
                         >
-                          <CreditCard className="w-3.5 h-3.5" /> Confirm Payment
+                          <CreditCard className="w-3.5 h-3.5" /> Manually Confirm Payment
                         </button>
-                      )}
-                      {activeOrder.paymentStatus !== 'paid' && !hasSubmittedPaymentScreenshot(activeOrder) && (
-                        <span className="px-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 text-xs font-semibold">
-                          Payment proof: Not Submitted
-                        </span>
                       )}
 
                       {/* Reject Order */}
@@ -918,12 +914,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       <Upload className="w-4 h-4" /> Upload Completed Deliverable
                     </div>
 
-                    {activeOrder.paymentStatus !== 'paid' && (
-                      <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200 space-y-1">
-                        <p className="font-bold">Upload locked — payment not verified</p>
-                        <p>Current payment status: <strong>{activeOrder.paymentStatus.replace('_', ' ')}</strong>. Verify the customer's payment in the Payment Verification section first. The upload button will unlock automatically after confirmation.</p>
-                      </div>
-                    )}
                     <form onSubmit={handleUploadDeliverable} className="space-y-2.5">
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                         <div className="sm:col-span-2">
@@ -954,7 +944,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
                       <button
                         type="submit"
-                        disabled={!newDeliverableFile || activeOrder.paymentStatus !== 'paid' || ['cancelled', 'rejected'].includes(activeOrder.status)}
+                        disabled={!newDeliverableFile}
                         className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
                       >
                         <FileCheck className="w-3.5 h-3.5" /> Upload & Mark Order Completed
@@ -1089,22 +1079,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                         )}
                       </td>
                       <td className="py-3.5">
-                        {ord.paymentStatus === 'paid' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified & Paid</span>}
-                        {ord.paymentStatus === 'verification_pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">Awaiting Approval</span>}
-                        {ord.paymentStatus === 'rejected' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">Rejected</span>}
-                        {ord.paymentStatus === 'pending' && <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Payment Proof Not Submitted</span>}
+                        {ord.status === 'cancelled' ? (
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${ord.paymentStatus === 'paid' ? 'bg-red-500/10 text-red-300 border-red-500/20' : 'bg-zinc-800 text-zinc-300 border-zinc-700'}`}>
+                            {ord.paymentStatus === 'paid' ? 'Paid / Cancelled' : 'Cancelled'}
+                          </span>
+                        ) : ord.paymentStatus === 'paid' ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Verified & Paid</span>
+                        ) : hasSubmittedPaymentScreenshot(ord) ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">Proof Submitted — Verify</span>
+                        ) : ord.paymentStatus === 'rejected' ? (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">Rejected</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Payment Proof Not Submitted</span>
+                        )}
                       </td>
                       <td className="py-3.5 text-right space-x-2">
-                        {ord.paymentStatus === 'verification_pending' && hasSubmittedPaymentScreenshot(ord) && (
+                        {ord.paymentStatus !== 'paid' && ord.paymentStatus !== 'awaiting_quote' && ord.status !== 'cancelled' && !(ord.paymentGateway?.provider === 'razorpay' && ord.paymentGateway.status === 'created') && (
                           <button
                             onClick={() => handleConfirmPayment(ord.id)}
                             className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition-colors"
                           >
-                            Confirm ₹{ord.finalPrice || ord.total}
+                            Manually Confirm ₹{ord.finalPrice || ord.total}
                           </button>
-                        )}
-                        {ord.paymentStatus !== 'paid' && !hasSubmittedPaymentScreenshot(ord) && (
-                          <span className="text-[11px] text-zinc-500 italic">Proof Not Submitted</span>
                         )}
                         {ord.paymentStatus === 'verification_pending' && (
                           <button
