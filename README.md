@@ -54,7 +54,9 @@ Configure these in the server host's secret/environment settings. Never commit r
 | `MICROSOFT_CLIENT_SECRET` | Optional Microsoft OAuth client secret |
 | `GEMINI_API_KEY` | Optional/feature-dependent Gemini API key |
 | `RESEND_API_KEY` | Server-only Resend API key for transactional email | 
-| `RESEND_FROM_EMAIL` | Optional fallback sender identity on a domain verified in Resend |\n| `GMAIL_USER` | Optional Gmail SMTP sender address (for example `camporasupport@gmail.com`) |\n| `GMAIL_APP_PASSWORD` | Server-only Google App Password; use a 16-character App Password, never the normal account password |
+| `RESEND_FROM_EMAIL` | Optional fallback sender identity on a domain verified in Resend |
+| `GMAIL_USER` | Optional Gmail SMTP sender address (for example `camporasupport@gmail.com`) |
+| `GMAIL_APP_PASSWORD` | Server-only Google App Password; use a 16-character App Password, never the normal account password |
 | `RAZORPAY_ENABLED` | Must remain `false` until the owner explicitly approves activation after testing |
 | `RAZORPAY_MODE` | Must explicitly be `test` or `live`; missing/invalid values disable the gateway; set to `live` only after sandbox validation |
 | `RAZORPAY_LIVE_APPROVED` | Must remain `false`; required to be explicitly set to `true` before live mode can activate |
