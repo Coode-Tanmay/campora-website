@@ -194,21 +194,16 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.ppt': 'application/vnd.ms-powerpoint',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.xls': 'application/vnd.ms-excel',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.txt': 'text/plain',
   '.csv': 'text/csv',
   '.zip': 'application/zip',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.txt': 'text/plain',
-  '.csv': 'text/csv',
-  '.ppt': 'application/vnd.ms-powerpoint',
-  '.doc': 'application/msword',
-  '.xls': 'application/vnd.ms-excel',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
 };
 
 function parsePrivateUpload(dataUrl: unknown, fileName: unknown): { buffer: Buffer; mimeType: string } {
@@ -1721,7 +1716,8 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, e
   const updatedOrder: CamporaOrder = {
     ...order,
     paymentStatus: 'verification_pending',
-    status: 'verification_pending',
+    status: order.status,
+    paymentProofStatus: 'submitted',
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
       utrNumber: cleanUtr || undefined,
@@ -1968,6 +1964,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
       ...order,
       activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_verified', description: `Payment of ₹${payableAmount} manually verified.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       paymentStatus: 'paid',
+      paymentProofStatus: 'submitted',
       status: order.status,
       progressPercent: order.progressPercent,
       paymentDetails: {
@@ -2011,6 +2008,7 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
       ...order,
       activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'payment_rejected', description: `Payment proof rejected: ${reason}`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       paymentStatus: 'rejected',
+      paymentProofStatus: 'submitted',
       paymentDetails: {
         ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }),
         rejectionReason: reason,
