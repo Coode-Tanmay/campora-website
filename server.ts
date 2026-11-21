@@ -1874,6 +1874,18 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
       }
       return step;
     });
+  } else if (status === 'in_progress') {
+    updatedTimeline = updatedTimeline.map((step) => {
+      if (step.id === 't4' || step.title.toLowerCase().includes('progress')) return { ...step, title: 'Work In Progress', description: 'CAMPORA has started working on your order.', status: 'current' as const, timestamp: now };
+      if (step.id === 't3' || step.title.toLowerCase().includes('payment')) return { ...step, status: 'completed' as const };
+      return step;
+    });
+  } else if (status === 'review') {
+    updatedTimeline = updatedTimeline.map((step) => {
+      if (step.id === 't4' || step.title.toLowerCase().includes('progress')) return { ...step, status: 'completed' as const };
+      if (step.id === 't5' || step.title.toLowerCase().includes('delivery')) return { ...step, title: 'Quality Review', description: 'Your work is undergoing final quality checks.', status: 'current' as const, timestamp: now };
+      return step;
+    });
   } else if (status === 'rejected') {
     if (!rejectionReason || !rejectionReason.trim()) {
       res.status(400).json({ error: 'Rejection reason is required.' });
