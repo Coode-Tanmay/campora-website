@@ -19,6 +19,7 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
   const [utrNumber, setUtrNumber] = useState('');
   const [screenshotPreview, setScreenshotPreview] = useState<string>('');
   const [screenshotName, setScreenshotName] = useState<string>('');
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +55,7 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
         return;
       }
       setScreenshotName(file.name);
+      setScreenshotFile(file);
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
@@ -69,14 +71,18 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
     setError(null);
 
     const cleanUtr = utrNumber.trim().replace(/\s+/g, '');
-    if (!cleanUtr || cleanUtr.length < 8) {
-      setError('Please enter a valid 12-digit UPI Reference / UTR number.');
+    if (!screenshotPreview || !screenshotFile) {
+      setError('Please upload your payment screenshot. It is required for manual verification.');
+      return;
+    }
+    if (cleanUtr && !/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) {
+      setError('Please enter a valid UPI reference / UTR number, or leave it blank.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onPaymentSubmitted(cleanUtr, screenshotPreview || undefined);
+      await onPaymentSubmitted(cleanUtr, screenshotPreview);
     } catch (err: any) {
       setError(err.message || 'Failed to submit payment details.');
     } finally {
@@ -151,7 +157,7 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
           <div className="text-[11px] text-zinc-400 space-y-1 leading-relaxed">
             <p>1. Open any UPI application on your smartphone.</p>
             <p>2. Send exact amount <strong className="text-white">₹{amountToPay}</strong>.</p>
-            <p>3. Note the 12-digit UTR/UPI Ref number from your receipt.</p>
+            <p>3. Upload the payment screenshot. UTR is optional.</p>
           </div>
         </div>
       </div>
@@ -167,32 +173,31 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
 
         <div className="space-y-1.5">
           <label className="block text-xs font-bold text-zinc-300">
-            UPI Reference / UTR Number (12 Digits) <span className="text-amber-400">*</span>
+            UPI Reference / UTR Number <span className="text-zinc-500">(Optional)</span>
           </label>
           <input
             type="text"
-            required
             value={utrNumber}
             onChange={(e) => setUtrNumber(e.target.value)}
-            placeholder="e.g. 423456789012"
+            placeholder="Enter UTR if available (optional)"
             className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 font-mono focus:outline-none focus:border-amber-500/50"
           />
         </div>
 
         <div className="space-y-1.5">
           <label className="block text-xs font-bold text-zinc-300">
-            Upload Payment Screenshot / Receipt (Optional)
+            Upload Payment Screenshot / Receipt <span className="text-amber-400">*</span>
           </label>
           <div className="relative border-2 border-dashed border-zinc-800 hover:border-amber-500/50 rounded-xl p-3 text-center transition-colors">
             <input
               type="file"
-              accept="image/*,.pdf"
+              accept="image/png,image/jpeg"
               onChange={handleFileChange}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
             <div className="flex items-center justify-center gap-2 text-xs text-zinc-400">
               <Upload className="w-4 h-4 text-amber-400" />
-              <span>{screenshotName ? screenshotName : 'Click or drop screenshot receipt image here'}</span>
+              <span>{screenshotName ? screenshotName : 'Upload PNG or JPG screenshot (required, max 500 KB)'}</span>
             </div>
           </div>
         </div>
@@ -207,13 +212,13 @@ export const ManualPaymentSection: React.FC<ManualPaymentSectionProps> = ({
           ) : (
             <>
               <Check className="w-4 h-4" />
-              <span>Submit Payment for Admin Verification</span>
+              <span>Submit Screenshot for Admin Verification</span>
             </>
           )}
         </button>
 
         <p className="text-[11px] text-zinc-500 text-center">
-          Payment is manually verified by the CAMPORA desk before design work begins.
+          Screenshot is required. UTR is optional. Admin manually checks the payment before work begins.
         </p>
       </form>
     </div>
