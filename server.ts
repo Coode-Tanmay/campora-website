@@ -1667,118 +1667,80 @@ app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWith
   res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
 });
 
-// Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
-app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, async (req: RequestWithUser, res: Response) => {
+// Customer submits mandatory screenshot proof and optional UTR. Submission never marks payment as paid.
+app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, express.json({ limit: '1mb' }), async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
-  const orderId = req.params.id;
-  const { utrNumber, screenshotUrl, screenshotName, screenshotSize } = req.body || {};
-
-  const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === orderId.toLowerCase());
-  if (orderIndex === -1) {
-    res.status(404).json({ error: 'Order not found.' });
-    return;
-  }
-
+  const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex === -1) return res.status(404).json({ error: 'Order not found.' });
   const order = ordersStore[orderIndex];
-  if (user.role !== 'customer' || order.customerId !== user.id) {
-    res.status(403).json({ error: 'You cannot submit payment for this order.' });
-    return;
-  }
-  if (order.paymentGateway?.provider === 'razorpay' && order.paymentGateway.status === 'created') {
-    res.status(409).json({ error: 'A secure online checkout is already open for this order. Complete it or wait for the payment attempt to fail before using manual UPI.' });
-    return;
-  }
-
-  if (order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review' || order.status === 'cancelled' || order.status === 'rejected' || order.status === 'completed') {
-    res.status(409).json({ error: 'This order is not ready to accept payment. Wait for the CAMPORA team to confirm the quote or order status.' });
-    return;
+  if (user.role !== 'customer' || order.customerId !== user.id) return res.status(403).json({ error: 'You cannot submit payment for this order.' });
+  if (order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review' || ['cancelled', 'rejected', 'completed'].includes(order.status)) {
+    return res.status(409).json({ error: 'This order is not ready to accept payment.' });
   }
   if (!['pending', 'rejected'].includes(order.paymentStatus)) {
-    res.status(409).json({ error: 'Payment proof has already been submitted or the payment is confirmed.' });
-    return;
+    return res.status(409).json({ error: 'Payment proof has already been submitted or payment is confirmed.' });
   }
 
-  const cleanUtr = typeof utrNumber === 'string' ? utrNumber.trim().replace(/\s+/g, '') : '';
-  if (!/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) {
-    res.status(400).json({ error: 'Please provide a valid UPI reference / UTR number.' });
-    return;
+  const cleanUtr = typeof req.body?.utrNumber === 'string' ? req.body.utrNumber.trim().replace(/\\s+/g, '') : '';
+  if (cleanUtr && !/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) {
+    return res.status(400).json({ error: 'UTR must be 8–32 letters, numbers or hyphens, or left blank.' });
+  }
+  const screenshotData = req.body?.screenshotUrl;
+  if (typeof screenshotData !== 'string' || !screenshotData.trim()) {
+    return res.status(400).json({ error: 'A payment screenshot is required.' });
   }
 
-  let safeScreenshotPath: string | undefined;
-  let screenshotBytes = 0;
-  if (typeof screenshotUrl === 'string' && screenshotUrl.trim()) {
-    if (!/^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/.test(screenshotUrl) || screenshotUrl.length > 700000) {
-      res.status(400).json({ error: 'Payment screenshot must be a PNG or JPG image under 500 KB.' });
-      return;
+  let screenshotPath: string;
+  let parsedScreenshot: { buffer: Buffer; mimeType: string };
+  try {
+    parsedScreenshot = parsePrivateUpload(screenshotData, typeof req.body?.screenshotName === 'string' ? req.body.screenshotName : 'Payment_Proof.png');
+    if (!['image/png', 'image/jpeg'].includes(parsedScreenshot.mimeType) || parsedScreenshot.buffer.length > 500 * 1024) {
+      throw new Error('Payment screenshot must be a PNG or JPG image under 500 KB.');
     }
-    try {
-      const parsedScreenshot = parsePrivateUpload(screenshotUrl, typeof screenshotName === 'string' ? screenshotName : 'Payment_Proof.png');
-      if (!['image/png', 'image/jpeg'].includes(parsedScreenshot.mimeType)) {
-        throw new Error('Payment proof must be a PNG or JPG image.');
-      }
-      screenshotBytes = parsedScreenshot.buffer.length;
-      safeScreenshotPath = await uploadPrivateFile(order.id, 'payment-proof', typeof screenshotName === 'string' ? screenshotName : 'Payment_Proof.png', parsedScreenshot);
-    } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : 'Payment screenshot upload failed.' });
-      return;
-    }
+    screenshotPath = await uploadPrivateFile(order.id, 'payment-proof', typeof req.body?.screenshotName === 'string' ? req.body.screenshotName : 'Payment_Proof.png', parsedScreenshot);
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Payment screenshot upload failed.' });
   }
 
-  const payableAmount = order.finalPrice ?? order.total;
   const now = new Date().toISOString();
-  const updatedTimeline: TimelineStep[] = order.timeline.map((step) => {
-    if (step.id === 't3' || step.title.toLowerCase().includes('payment')) {
-      return {
-        ...step,
-        title: 'Payment Verification Pending',
-        description: 'Payment reference submitted. CAMPORA is checking the transaction.',
-        status: 'current' as const,
-        timestamp: now,
-      };
-    }
-    return step;
-  });
-
-  const previousScreenshotPath = order.paymentDetails?.screenshotPath;
+  const payableAmount = order.finalPrice ?? order.total;
+  const updatedTimeline: TimelineStep[] = (order.timeline || []).map((step) =>
+    step.id === 't3' || step.title.toLowerCase().includes('payment')
+      ? { ...step, title: 'Payment Verification Pending', description: 'Payment screenshot submitted. CAMPORA is checking the transaction.', status: 'current' as const, timestamp: now }
+      : step
+  );
   const updatedOrder: CamporaOrder = {
     ...order,
     paymentStatus: 'verification_pending',
     status: 'verification_pending',
     paymentDetails: {
       upiId: 'tanmayvbhagat-1@oksbi',
-      utrNumber: cleanUtr,
-      screenshotPath: safeScreenshotPath,
-      screenshotName: safeScreenshotPath ? (typeof screenshotName === 'string' ? screenshotName.slice(0, 180) : 'Payment_Proof.png') : undefined,
-      screenshotSize: safeScreenshotPath
-        ? (typeof screenshotSize === 'string' ? screenshotSize.slice(0, 40) : `${(screenshotBytes / 1024).toFixed(1)} KB`)
-        : undefined,
+      utrNumber: cleanUtr || undefined,
+      screenshotPath,
+      screenshotName: typeof req.body?.screenshotName === 'string' ? req.body.screenshotName.slice(0, 180) : 'Payment_Proof.png',
+      screenshotSize: `${(parsedScreenshot.buffer.length / 1024).toFixed(1)} KB`,
       submittedAt: now,
       amountPaid: payableAmount,
     },
     timeline: updatedTimeline,
     updatedAt: now,
   };
-
   ordersStore[orderIndex] = updatedOrder;
   try {
     await persistState();
   } catch {
     ordersStore[orderIndex] = order;
-    await removePrivateFiles(safeScreenshotPath ? [safeScreenshotPath] : []);
-    res.status(500).json({ error: 'Payment proof could not be saved. Please try again.' });
-    return;
+    await removePrivateFiles([screenshotPath]);
+    return res.status(500).json({ error: 'Payment proof could not be saved. Please try again.' });
   }
-  if (previousScreenshotPath && previousScreenshotPath !== safeScreenshotPath) {
-    await removePrivateFiles([previousScreenshotPath]);
-  }
-
   void sendPaymentUpdateEmail(user.email, user.name, updatedOrder.id, 'received');
-  const hydratedOrder = await hydrateOrderForResponse(updatedOrder);
-  const { adminNotes, ...customerSafeOrder } = hydratedOrder;
-  res.json({ success: true, message: 'Payment proof submitted. Admin verification is pending.', order: customerSafeOrder });
+  const hydrated = await hydrateOrderForResponse(updatedOrder);
+  const { adminNotes, ...customerSafeOrder } = hydrated;
+  return res.json({ success: true, message: 'Screenshot submitted. Admin verification is pending.', order: customerSafeOrder });
 });
 
 // Customer profile & stats
+
 app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Response) => {
   const user = req.user!;
   const userOrders = ordersStore.filter((o) => o.customerId === user.id);
