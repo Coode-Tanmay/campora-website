@@ -1144,13 +1144,13 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                     <p className="text-xs text-[#B8B8B8] mt-1">
                       {requiresAdminReview
                         ? 'Submit your brief. We will review and send confirmation + payment link to your WhatsApp.'
-                        : 'Choose your payment gateway to initiate immediate production.'}
+                        : 'Pay securely using our direct UPI QR payment. No payment gateway is used.'}
                     </p>
                   </div>
 
                   {!requiresAdminReview ? (
                     <div className="space-y-3 pt-1">
-                      <div className="grid grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-1 gap-2.5">
                         <button
                           type="button"
                           id="pay-method-upi"
@@ -1165,33 +1165,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                           <span>UPI / GPay / QR</span>
                         </button>
 
-                        <button
-                          type="button"
-                          id="pay-method-card"
-                          onClick={() => setPaymentMethod('card')}
-                          className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all ${
-                            paymentMethod === 'card'
-                              ? 'bg-[#1D1D1D] border-[#D4A72C] text-white ring-1 ring-[#D4A72C]'
-                              : 'bg-[#171717] border-[#2A2A2A] text-[#858585] hover:border-[#D4A72C]/40'
-                          }`}
-                        >
-                          <CreditCard className="w-5 h-5 text-[#D4A72C]" />
-                          <span>Cards / NetBanking</span>
-                        </button>
 
-                        <button
-                          type="button"
-                          id="pay-method-whatsapp"
-                          onClick={() => setPaymentMethod('whatsapp')}
-                          className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all ${
-                            paymentMethod === 'whatsapp'
-                              ? 'bg-[#35C759]/15 border-[#35C759] text-white ring-1 ring-[#35C759]'
-                              : 'bg-[#171717] border-[#2A2A2A] text-[#858585] hover:border-[#D4A72C]/40'
-                          }`}
-                        >
-                          <Phone className="w-5 h-5 text-[#35C759]" />
-                          <span>Pay via WhatsApp</span>
-                        </button>
                       </div>
 
                       <div className="bg-[#171717] border border-[#2A2A2A] rounded-2xl p-4 text-xs space-y-2">
