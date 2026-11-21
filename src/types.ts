@@ -149,6 +149,7 @@ export interface CamporaOrder {
   total: number;
   quoteStatus: QuoteStatus;
   paymentStatus: PaymentStatus;
+  paymentProofStatus?: PaymentProofStatus;
   paymentDetails?: PaymentVerificationDetails;
   paymentGateway?: PaymentGatewayDetails;
   
