@@ -13,6 +13,7 @@ import { Footer } from './components/Footer';
 import { OrderFormModal } from './components/OrderFormModal';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
+import { GoldSparkCursor } from './components/GoldSparkCursor';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder, OrderFileUploadPayload } from './types';
 import { api } from './services/api';
@@ -370,6 +371,9 @@ function AppContent() {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
       />
+
+      {/* Subtle decorative gold spark cursor trail (desktop only) */}
+      <GoldSparkCursor />
 
       {/* Floating WhatsApp Quick Action Button */}
       <WhatsAppFloatingButton />
