@@ -237,9 +237,19 @@ function parsePrivateUpload(dataUrl: unknown, fileName: unknown): { buffer: Buff
   if (expectedMimeType === 'image/jpeg' && !(buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)) {
     throw new Error('The selected JPG file appears to be invalid.');
   }
-  if (['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip', 'application/vnd.ms-powerpoint', 'application/msword', 'application/vnd.ms-excel'].includes(expectedMimeType)
+  if (['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'].includes(expectedMimeType)
     && !(buffer[0] === 0x50 && buffer[1] === 0x4b)) {
     throw new Error('The selected Office or ZIP file appears to be invalid.');
+  }
+  if (['application/vnd.ms-powerpoint', 'application/msword', 'application/vnd.ms-excel'].includes(expectedMimeType)
+    && !buffer.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))) {
+    throw new Error('The selected legacy Office file appears to be invalid.');
+  }
+  if (expectedMimeType === 'image/gif' && !['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString())) {
+    throw new Error('The selected GIF file appears to be invalid.');
+  }
+  if (expectedMimeType === 'image/webp' && !(buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP')) {
+    throw new Error('The selected WEBP file appears to be invalid.');
   }
 
   return { buffer, mimeType: expectedMimeType };
