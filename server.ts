@@ -1625,6 +1625,48 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
   }
 });
 
+// A customer may cancel an unpaid order from the payment screen. Orders with submitted proof or a confirmed payment require admin handling.
+app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWithUser, res: Response) => {
+  const user = req.user!;
+  const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex === -1) {
+    res.status(404).json({ error: 'Order not found.' });
+    return;
+  }
+
+  const order = ordersStore[orderIndex];
+  if (user.role !== 'customer' || order.customerId !== user.id) {
+    res.status(403).json({ error: 'You cannot cancel this order.' });
+    return;
+  }
+  if (order.paymentStatus === 'paid' || order.paymentStatus === 'verification_pending' || order.paymentStatus === 'awaiting_quote' || ['cancelled', 'completed', 'rejected'].includes(order.status)) {
+    res.status(409).json({ error: 'This order cannot be cancelled from the payment screen. Please contact CAMPORA support.' });
+    return;
+  }
+  if (order.paymentDetails?.utrNumber || order.paymentStatus !== 'pending') {
+    res.status(409).json({ error: 'Payment activity has already been submitted. Please contact CAMPORA support before cancelling.' });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const updatedOrder: CamporaOrder = {
+    ...order,
+    status: 'cancelled',
+    cancellationReason: 'Customer cancelled during payment.',
+    cancelledBy: 'Customer',
+    cancelledAt: now,
+    updatedAt: now,
+  };
+  ordersStore[orderIndex] = updatedOrder;
+  try {
+    await persistState();
+  } catch (error) {
+    ordersStore[orderIndex] = order;
+    throw error;
+  }
+  res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
+});
+
 // Customer submits UPI payment proof. A screenshot is optional, but never marks payment as paid.
 app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, async (req: RequestWithUser, res: Response) => {
   const user = req.user!;
