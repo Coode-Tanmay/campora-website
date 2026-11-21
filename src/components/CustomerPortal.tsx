@@ -155,7 +155,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   };
 
   // Extract all deliverables across customer's orders
-  const allDeliverables = orders.flatMap((ord) => (ord.deliverables || []).map((d) => ({ ...d, orderId: ord.id, serviceName: ord.serviceName })));
+  const allDeliverables = orders.filter((ord) => ord.paymentStatus === 'paid' && ord.status === 'completed').flatMap((ord) => (ord.deliverables || []).map((d) => ({ ...d, orderId: ord.id, serviceName: ord.serviceName })));
 
   return (
     <div id="customer-portal-container" className="min-h-screen bg-[#0A0A0C] text-zinc-100 pt-20 pb-16">
@@ -323,8 +323,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     </div>
                   </div>
 
-                  {/* Progress Indicator */}
-                  <div className="my-4">
+                  {/* Progress is hidden until payment is verified. */}
+                  {ord.paymentStatus === 'paid' ? <div className="my-4">
                     <div className="flex items-center justify-between text-xs mb-1.5">
                       <span className="text-zinc-400 font-medium">Order Progress</span>
                       <span className="text-amber-400 font-semibold">{ord.progressPercent}%</span>
@@ -336,6 +336,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       />
                     </div>
                   </div>
+
+                  </div> : <div className="my-4 text-xs text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">Order tracking becomes available after payment verification.</div>}
 
                   {/* Order Specs & Action Buttons */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-zinc-400">
@@ -375,6 +377,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                         </>
                       )}
 
+                      {ord.paymentStatus === 'paid' && ord.status === 'completed' && (ord.deliverables || []).map((file) => file.downloadUrl && <a key={file.id} href={file.downloadUrl} download className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold inline-flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Download</a>)}
                       <button
                         id={`btn-view-order-${ord.id}`}
                         onClick={() => setSelectedOrder(ord)}
@@ -618,7 +621,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
             <h2 className="text-xl font-bold text-white mb-1">{selectedOrder.serviceName}</h2>
             <p className="text-xs text-zinc-400 mb-4">{selectedOrder.topic}</p>
 
-            {/* Timeline */}
+            {/* Timeline is unlocked only after admin verifies payment. */}
+            {selectedOrder.paymentStatus === 'paid' ? (
             <div className="mb-6 p-4 rounded-xl bg-zinc-900 border border-zinc-800">
               <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">Live Progress Timeline</h3>
               <div className="space-y-3">
@@ -645,10 +649,16 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
               </div>
             </div>
 
+            </div>
+            ) : (
+              <div className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-200">Live order tracking unlocks after CAMPORA manually verifies your payment. Your order has been safely received.</div>
+            )}
+
             {/* Template & Specs */}
             {selectedOrder.hasCollegeTemplate && (
-              <div className="mb-4 p-3 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-300">
-                <span className="font-bold text-amber-400">Official College Template:</span> {selectedOrder.collegeTemplateFile?.name || 'Attached Template'}
+              <div className="mb-4 p-3 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-300 flex items-center justify-between gap-2">
+                <span><span className="font-bold text-amber-400">Official College Template:</span> {selectedOrder.collegeTemplateFile?.name || 'Attached Template'}</span>
+                {selectedOrder.paymentStatus === 'paid' && selectedOrder.collegeTemplateFile?.downloadUrl && <a href={selectedOrder.collegeTemplateFile.downloadUrl} download className="underline">Download</a>}
               </div>
             )}
 
