@@ -3,9 +3,8 @@ const APP_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').re
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'CAMPORA <onboarding@resend.dev>';
 
 function escapeHtml(value: unknown): string {
-  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[character] as string));
+  const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(value ?? '').replace(/[&<>"']/g, (character) => entities[character]);
 }
 
 function emailLayout(title: string, preheader: string, body: string): string {
