@@ -303,6 +303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
     if (filterCategory === 'all') return true;
     if (filterCategory === 'verification_pending') return ord.paymentStatus === 'verification_pending';
+    if (filterCategory === 'not_submitted') return ord.paymentStatus === 'pending' && !ord.paymentDetails?.screenshotName;
     if (filterCategory === 'new') return ord.status === 'new_order' || ord.status === 'under_review';
     if (filterCategory === 'paid') return ord.paymentStatus === 'paid';
     if (filterCategory === 'in_progress') return ord.status === 'in_progress' || ord.status === 'review';
@@ -565,7 +566,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
                   {[
                     { id: 'all', label: 'All' },
-                    { id: 'verification_pending', label: 'Pending UTR' },
+                    { id: 'verification_pending', label: 'Proof Submitted' },
+                    { id: 'not_submitted', label: 'Proof Not Submitted' },
                     { id: 'new', label: 'New / Review' },
                     { id: 'in_progress', label: 'In Progress' },
                     { id: 'completed', label: 'Completed' },
