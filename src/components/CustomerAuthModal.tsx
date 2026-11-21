@@ -28,6 +28,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [copiedUri, setCopiedUri] = useState(false);
 
   // Unconfigured OAuth helper modal state
@@ -70,6 +71,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setIsLoading(true);
 
     try {
@@ -77,13 +79,17 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
         throw new Error('Please enter a valid email address.');
       }
 
-      await loginCustomer({
+      const result = await loginCustomer({
         email,
         password,
         name: name || undefined,
         whatsapp: whatsapp || undefined,
         college: college || undefined,
       });
+      if (result.verificationRequired) {
+        setNotice('We sent a verification link to your email. Verify your address, then sign in.');
+        return;
+      }
 
       if (onSuccess) onSuccess();
       onClose();
@@ -195,6 +201,10 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
               Sign in to manage your orders, payments and completed work.
             </p>
           </div>
+
+          {notice && (
+            <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs" role="status">{notice}</div>
+          )}
 
           {/* Error Banner */}
           {error && (
@@ -339,6 +349,19 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                 />
               </div>
             </div>
+
+            {mode === 'login' && (
+              <div className="text-right -mt-1">
+                <button type="button" className="text-[11px] text-[#D4A72C] hover:underline" onClick={async () => {
+                  const address = email.trim() || window.prompt('Enter the email address for your CAMPORA account:') || '';
+                  if (!address.trim()) return;
+                  setError(null); setNotice(null); setIsLoading(true);
+                  try { const result = await api.requestPasswordReset(address.trim()); setNotice(result.message); }
+                  catch (err: any) { setError(err.message || 'Could not request a password reset. Please try again.'); }
+                  finally { setIsLoading(false); }
+                }}>Forgot password?</button>
+              </div>
+            )}
 
             <button
               id="btn-customer-submit"
