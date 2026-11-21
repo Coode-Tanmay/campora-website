@@ -1684,7 +1684,7 @@ app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWith
     ordersStore[orderIndex] = order;
     throw error;
   }
-  res.json({ success: true, order: await hydrateOrderForResponse(updatedOrder) });
+  res.json({ success: true, order: toCustomerSafeOrder(await hydrateOrderForResponse(updatedOrder)) });
 });
 
 // Customer submits mandatory screenshot proof and optional UTR. Submission never marks payment as paid.
