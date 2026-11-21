@@ -69,7 +69,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
 
   useEffect(() => {
     fetchOrders();
-    api.getRazorpayConfig().then((config) => setRazorpayEnabled(config.enabled && Boolean(config.keyId))).catch(() => setRazorpayEnabled(false));
+    setRazorpayEnabled(false); // CAMPORA uses direct UPI only to avoid gateway fees.
   }, []);
 
   const handleStartRazorpayCheckout = async (order: CamporaOrder) => {
@@ -352,7 +352,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {ord.paymentStatus !== 'paid' && (
+                      {['pending', 'rejected'].includes(ord.paymentStatus) && (
                         <>
                           {razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
                             <button
@@ -371,7 +371,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                               className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-medium text-xs transition-colors flex items-center gap-1.5"
                             >
                               <QrCode className="w-3.5 h-3.5" />
-                              {ord.paymentStatus === 'verification_pending' ? 'View/Update UPI Proof' : 'Manual UPI'}
+                              {ord.paymentStatus === 'verification_pending' ? 'Proof Submitted' : 'Pay by UPI'}
                             </button>
                           )}
                         </>
@@ -491,7 +491,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                       </td>
                       <td className="py-3">{getPaymentBadge(ord.paymentStatus)}</td>
                       <td className="py-3 text-right">
-                        {ord.paymentStatus !== 'paid' && (
+                        {['pending', 'rejected'].includes(ord.paymentStatus) && (
                           <div className="inline-flex gap-2">
                             {razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
                               <button onClick={() => handleStartRazorpayCheckout(ord)} disabled={startingPaymentFor === ord.id} className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20">{ord.paymentGateway?.status === 'created' ? 'Resume Checkout' : 'Pay Securely'}</button>
