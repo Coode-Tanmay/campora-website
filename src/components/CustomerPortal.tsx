@@ -146,7 +146,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
       case 'paid':
         return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Paid & Verified</span>;
       case 'verification_pending':
-        return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">Verifying UTR</span>;
+        return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">Payment proof under review</span>;
       case 'rejected':
         return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">Payment Issue</span>;
       default:
@@ -454,7 +454,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                 <div className="text-2xl font-bold text-blue-400">
                   {orders.filter((o) => o.paymentStatus === 'verification_pending').length}
                 </div>
-                <div className="text-[11px] text-zinc-500 mt-1">Admin reviewing UTR/Screenshot</div>
+                <div className="text-[11px] text-zinc-500 mt-1">Admin checking screenshot and optional UTR</div>
               </div>
 
               <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800">
