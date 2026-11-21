@@ -116,6 +116,14 @@ export interface OrderFileUploadPayload {
   dataUrl: string;
 }
 
+export interface OrderActivity {
+  id: string;
+  action: string;
+  description: string;
+  actor: string;
+  timestamp: string;
+}
+
 export interface CamporaOrder {
   id: string; // e.g. CMP-1024
   customerId: string;
@@ -166,6 +174,7 @@ export interface CamporaOrder {
   updatedAt: string;
   estimatedDelivery: string;
   timeline: TimelineStep[];
+  activityHistory?: OrderActivity[];
   deliverables?: DeliverableFile[];
   adminNotes?: string;
 }
