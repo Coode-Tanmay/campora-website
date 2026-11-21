@@ -315,6 +315,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   };
 
   const handleFinalSubmit = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
     setStepError('');
     setPaymentProofSubmitted(false);
