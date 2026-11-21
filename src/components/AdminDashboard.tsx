@@ -125,8 +125,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const fetchAdminData = async () => {
-    setIsLoading(true);
+  const fetchAdminData = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       const [ordersRes, custRes, filesRes] = await Promise.all([
         api.getAdminOrders(),
@@ -143,12 +143,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     } catch (err: any) {
       triggerToast(err.message || 'Failed to load admin data.');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     fetchAdminData();
+    // Poll the protected admin orders endpoint so customer submissions and changes
+    // made in other sessions appear without a manual browser refresh.
+    const refreshOrders = async () => {
+      try {
+        const response = await api.getAdminOrders();
+        setOrders(response.orders || []);
+      } catch (err: any) {
+        if (err?.status === 401 || err?.status === 403) {
+          triggerToast(err.message || 'Administrator session expired. Please sign in again.');
+        }
+      }
+    };
+    const interval = window.setInterval(refreshOrders, 8000);
+    const handleFocus = () => { void fetchAdminData(false); };
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const triggerToast = (msg: string) => {
