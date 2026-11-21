@@ -50,6 +50,7 @@ export type OrderStatus =
   | 'quote_sent';
 
 export type PaymentStatus = 'pending' | 'verification_pending' | 'paid' | 'awaiting_quote' | 'rejected';
+export type PaymentProofStatus = 'not_submitted' | 'submitted';
 
 export type QuoteStatus = 'not_required' | 'pending' | 'sent' | 'accepted';
 
