@@ -1,0 +1,28 @@
+{
+  "id": "/",
+  "name": "CAMPORA — Your College Work. Done.",
+  "short_name": "CAMPORA",
+  "description": "CAMPORA desktop app for college work, orders and updates.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#0B0B0B",
+  "theme_color": "#0B0B0B",
+  "orientation": "any",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/campora-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
