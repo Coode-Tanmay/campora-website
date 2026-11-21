@@ -252,6 +252,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     }
   };
 
+  const handleExportBackup = async () => {
+    try {
+      const backup = await api.exportAdminBackup();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `campora-orders-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      triggerToast('Order metadata backup downloaded. Uploaded file binaries remain in private storage.');
+    } catch (err: any) {
+      triggerToast(err.message || 'Could not export order backup.');
+    }
+  };
+
   const handleSaveAdminNotes = async () => {
     if (!activeOrder) return;
     try {
@@ -398,6 +416,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
         >
           <FolderOpen className="w-4 h-4" /> File Repository ({files.length})
         </button>
+      </div>
+
+      <div className="px-4 sm:px-6 py-2 bg-[#0E0E11] flex justify-end border-b border-zinc-800">
+        <button onClick={handleExportBackup} className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold">Export Orders Backup</button>
       </div>
 
       {/* Toast Alert */}
