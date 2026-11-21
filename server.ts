@@ -403,12 +403,22 @@ const requireAuth = (req: RequestWithUser, res: Response, next: NextFunction): v
 };
 
 const requireAdmin = (req: RequestWithUser, res: Response, next: NextFunction): void => {
-  if (!req.user) {
-    res.status(401).json({ error: 'Authentication required. Please log in as administrator.' });
+  // Keep administrator authorization isolated from the customer session cookie.
+  // Customer sign-in in another tab must not overwrite the admin desk's authority.
+  const adminToken = req.cookies?.campora_admin_session;
+  if (!adminToken) {
+    res.status(401).json({ error: 'Administrator session expired. Please sign in again.' });
     return;
   }
-  if (req.user.role !== 'admin') {
-    res.status(403).json({ error: 'Access Denied — Administrator access required.' });
+  try {
+    const decoded = jwt.verify(adminToken, JWT_SECRET, { algorithms: ['HS256'] }) as AuthUser & { aud?: unknown };
+    if (decoded?.role !== 'admin' || typeof decoded.id !== 'string' || !decoded.id || decoded.aud !== undefined) {
+      res.status(403).json({ error: 'Access Denied — Administrator access required.' });
+      return;
+    }
+    req.user = decoded;
+  } catch {
+    res.status(401).json({ error: 'Administrator session expired. Please sign in again.' });
     return;
   }
   next();
@@ -1170,6 +1180,15 @@ app.post('/api/auth/admin/login', adminLoginLimiter, async (req: Request, res: R
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
+    // Separate path-scoped cookie prevents customer sign-in in another tab
+    // from replacing the administrator credential used by /api/admin routes.
+    res.cookie('campora_admin_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/admin',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     res.json({
       success: true,
@@ -1370,6 +1389,12 @@ app.post('/api/auth/logout', (_req: Request, res: Response) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
+  });
+  res.clearCookie('campora_admin_session', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/api/admin',
   });
   res.json({ success: true, message: 'Logged out successfully.' });
 });
