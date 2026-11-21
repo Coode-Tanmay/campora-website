@@ -16,7 +16,7 @@ function doPost(e) {
     var to = String(payload.to || '').trim();
     var subject = String(payload.subject || '').trim();
     var html = String(payload.html || '');
-    if (!/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(to) || !subject || subject.length > 180 || !html || html.length > 100000) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || !subject || subject.length > 180 || !html || html.length > 100000) {
       return json_({ success: false, error: 'Invalid email payload.' });
     }
     GmailApp.sendEmail(to, subject, 'This message contains HTML content. Please view it in an HTML-capable email client.', {
