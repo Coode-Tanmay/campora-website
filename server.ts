@@ -483,6 +483,35 @@ const deliverableUploadLimiter = createRateLimiter({
   message: 'The hourly deliverable upload limit has been reached. Please try again later.',
 });
 
+// Admin-only, non-destructive email template test. Sends clearly marked samples
+// to the CAMPORA support inbox; it never creates or changes customer/order/payment data.
+app.post('/api/admin/email/test', emailActionLimiter, requireAdmin, async (_req: RequestWithUser, res: Response) => {
+  const recipient = 'camporasupport@gmail.com';
+  if (!EMAIL_VERIFICATION_ENABLED) {
+    res.status(503).json({ success: false, error: 'Transactional email is not configured.' });
+    return;
+  }
+  const sampleOrderId = 'TEST-EMAIL-ONLY';
+  const results = await Promise.all([
+    sendVerificationEmail(recipient, 'CAMPORA Admin (test)', randomBytes(32).toString('hex'), true),
+    sendPasswordResetEmail(recipient, 'CAMPORA Admin (test)', randomBytes(32).toString('hex'), true),
+    sendOrderConfirmationEmail(recipient, 'CAMPORA Admin (test)', sampleOrderId, 'Sample academic service', true),
+    sendPaymentUpdateEmail(recipient, 'CAMPORA Admin (test)', sampleOrderId, 'received', true),
+    sendPaymentUpdateEmail(recipient, 'CAMPORA Admin (test)', sampleOrderId, 'confirmed', true),
+    sendPaymentUpdateEmail(recipient, 'CAMPORA Admin (test)', sampleOrderId, 'rejected', true),
+    sendOrderStatusEmail(recipient, 'CAMPORA Admin (test)', sampleOrderId, 'approved', 'Sample status update only.', true),
+    sendDeliveryEmail(recipient, 'CAMPORA Admin (test)', sampleOrderId, true),
+  ]);
+  const names = ['account verification', 'password reset', 'order confirmation', 'payment received', 'payment confirmed', 'payment rejected', 'order status update', 'delivery notification'];
+  const checks = names.map((name, index) => ({ name, sent: results[index] }));
+  res.status(results.every(Boolean) ? 200 : 502).json({
+    success: results.every(Boolean),
+    recipient,
+    checks,
+    note: 'Test messages only. No customer, order, or payment records were created or modified.',
+  });
+});
+
 // Public readiness check used by Render. It verifies both the persistent state table
 // and the private file bucket without exposing internal error messages or credentials.
 app.get('/api/health', async (_req: Request, res: Response) => {
