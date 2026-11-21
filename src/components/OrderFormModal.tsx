@@ -491,7 +491,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               <p className="text-sm text-[#B8B8B8] max-w-lg mx-auto mt-2">
                 {createdOrderSummary.requiresReview
                   ? 'Our academic review desk is examining your brief. You will receive quote confirmation on your WhatsApp & dashboard shortly.'
-                  : 'Your order has been securely recorded. Complete the UPI payment below and submit your UTR for admin verification.'}
+                  : 'Your order has been securely recorded. Scan the UPI QR, upload your payment screenshot, and optionally enter your UTR for admin verification.'}
               </p>
             </div>
 
@@ -531,7 +531,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-2">
                     <CheckCircle2 className="w-8 h-8 text-amber-400 mx-auto" />
                     <h4 className="font-bold text-amber-300">Payment verification pending</h4>
-                    <p className="text-xs text-[#B8B8B8]">Your UTR has been submitted. The Live Order Tracker will be available after CAMPORA admin verifies your payment.</p>
+                    <p className="text-xs text-[#B8B8B8]">Your payment screenshot has been submitted. UTR is optional. The Live Order Tracker will be available after CAMPORA admin verifies your payment.</p>
                   </div>
                 ) : (
                   <>
