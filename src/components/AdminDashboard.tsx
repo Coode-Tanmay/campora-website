@@ -101,6 +101,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'cancelled' | 'refund_completed'>('all');
+  const [manageOrdersSort, setManageOrdersSort] = useState<'time_left' | 'date_newest' | 'date_oldest'>('time_left');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
   const [copiedUtr, setCopiedUtr] = useState(false);
@@ -359,6 +360,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     if (manageOrdersTab === 'delayed') return isDelayed;
     // Live: active orders that are not in progress, delayed, cancelled, completed or refunded.
     return !isCancelled && !isInProgress && !isDelayed && ord.status !== 'completed' && !isRefundCompleted;
+  });
+
+  const sortedFilteredOrders = [...filteredOrders].sort((a, b) => {
+    if (manageOrdersSort === 'date_newest' || manageOrdersSort === 'date_oldest') {
+      const aDate = new Date(a.createdAt).getTime();
+      const bDate = new Date(b.createdAt).getTime();
+      const direction = manageOrdersSort === 'date_newest' ? -1 : 1;
+      return ((Number.isFinite(aDate) ? aDate : 0) - (Number.isFinite(bDate) ? bDate : 0)) * direction;
+    }
+    const now = Date.now();
+    const aCreated = new Date(a.createdAt).getTime();
+    const bCreated = new Date(b.createdAt).getTime();
+    const aTimeLeft = Number.isFinite(aCreated) ? aCreated + getDeadlineDurationMs(a.deadline) - now : Number.NEGATIVE_INFINITY;
+    const bTimeLeft = Number.isFinite(bCreated) ? bCreated + getDeadlineDurationMs(b.deadline) - now : Number.NEGATIVE_INFINITY;
+    return bTimeLeft - aTimeLeft;
   });
 
   const manageOrderTabCounts = {
@@ -653,11 +669,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                     </button>
                   ))}
                 </div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
+                  <label htmlFor="manage-orders-sort" className="text-[11px] text-zinc-400 whitespace-nowrap">Sort / Filter</label>
+                  <select
+                    id="manage-orders-sort"
+                    value={manageOrdersSort}
+                    onChange={(e) => setManageOrdersSort(e.target.value as 'time_left' | 'date_newest' | 'date_oldest')}
+                    className="w-full sm:flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-[11px] text-zinc-200 focus:outline-none focus:border-amber-500/50"
+                  >
+                    <option value="time_left">Time Left: High to Low</option>
+                    <option value="date_newest">Date: Newest First</option>
+                    <option value="date_oldest">Date: Oldest First</option>
+                  </select>
+                </div>
               </div>
 
               {/* Order Cards List */}
               <div className="space-y-2 max-h-[calc(100vh-230px)] overflow-y-auto pr-1">
-                {filteredOrders.map((ord) => (
+                {sortedFilteredOrders.map((ord) => (
                   <div
                     key={ord.id}
                     onClick={() => setSelectedOrderId(ord.id)}
