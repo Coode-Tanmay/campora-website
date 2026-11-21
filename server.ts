@@ -53,8 +53,11 @@ process.on('unhandledRejection', (reason) => {
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-// Email verification is enabled only after a verified sender identity is configured in Resend.
-const EMAIL_VERIFICATION_ENABLED = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
+// Enable verification only when at least one complete transactional email sender is configured.
+const EMAIL_VERIFICATION_ENABLED = Boolean(
+  (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) ||
+  (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL)
+);
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
