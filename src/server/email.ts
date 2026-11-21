@@ -1,17 +1,5 @@
-import nodemailer from 'nodemailer';
-
-const RESEND_API_URL = 'https://api.resend.com/emails';
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
-const gmailTransporter = GMAIL_USER && GMAIL_APP_PASSWORD
-  ? nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD.replace(/\s/g, '') },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
-    })
-  : null;
+const GOOGLE_APPS_SCRIPT_URL = process.env.GMAIL_APPS_SCRIPT_URL;
+const GOOGLE_APPS_SCRIPT_TOKEN = process.env.GMAIL_APPS_SCRIPT_TOKEN;
 const APP_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').replace(/\/$/, '');
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
 
@@ -38,17 +26,19 @@ function emailLayout(title: string, preheader: string, body: string): string {
 }
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
-  if (gmailTransporter && GMAIL_USER) {
+  if (GOOGLE_APPS_SCRIPT_URL && GOOGLE_APPS_SCRIPT_TOKEN) {
     try {
-      await gmailTransporter.sendMail({
-        from: `CAMPORA <${GMAIL_USER}>`,
-        to,
-        subject,
-        html,
+      const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: GOOGLE_APPS_SCRIPT_TOKEN, to, subject, html }),
+        signal: AbortSignal.timeout(20000),
       });
-      return true;
+      const result = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
+      if (response.ok && result?.success === true) return true;
+      console.error('Google Apps Script mail relay rejected the message:', result?.error || `HTTP ${response.status}`);
     } catch (error) {
-      console.error('Gmail SMTP delivery failed; checking configured fallback:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Google Apps Script mail relay failed:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
@@ -72,10 +62,9 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
     }
   }
 
-  console.warn('Transactional email skipped: configure Gmail SMTP or a verified Resend sender.');
+  console.warn('Transactional email skipped: configure the Google Apps Script relay or a verified Resend sender.');
   return false;
 }
-
 export async function sendVerificationEmail(to: string, name: string, token: string): Promise<boolean> {
   const url = `${APP_URL}/api/auth/customer/verify-email?token=${encodeURIComponent(token)}`;
   const body = `<p>Hi ${escapeHtml(name)},</p><p>Welcome to CAMPORA. Please verify your email address to activate your account.</p><p style="margin:28px 0"><a href="${url}" style="display:inline-block;background:#d4a72c;color:#111;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:8px">Verify email address</a></p><p style="font-size:12px;color:#a1a1aa">This link expires in 24 hours. If you did not create this account, you can ignore this email.</p>`;
