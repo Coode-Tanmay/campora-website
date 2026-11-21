@@ -1555,6 +1555,7 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
     total,
     quoteStatus: requiresReview ? 'pending' : 'not_required',
     paymentStatus: requiresReview ? 'awaiting_quote' : 'pending',
+    paymentProofStatus: 'not_submitted',
     status: requiresReview ? 'requirements_review' : 'new_order',
     requiresReview,
     reviewReason: requiresReview ? 'Order requires review before payment.' : undefined,
@@ -1855,7 +1856,11 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithU
   }
 
   const order = ordersStore[orderIndex];
-  const now = 'Just now';
+  if (['in_progress', 'review'].includes(status) && order.paymentStatus !== 'paid') {
+    res.status(409).json({ error: 'Payment must be verified before work can move into progress or review.' });
+    return;
+  }
+  const now = new Date().toISOString();
 
   let updatedTimeline = [...order.timeline];
 
