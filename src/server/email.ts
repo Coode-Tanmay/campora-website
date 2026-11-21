@@ -1,4 +1,17 @@
+import nodemailer from 'nodemailer';
+
 const RESEND_API_URL = 'https://api.resend.com/emails';
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+const gmailTransporter = GMAIL_USER && GMAIL_APP_PASSWORD
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD.replace(/\\s/g, '') },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
+    })
+  : null;
 const APP_URL = (process.env.APP_URL || 'https://campora-website.vercel.app').replace(/\/$/, '');
 const FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
 
@@ -25,27 +38,42 @@ function emailLayout(title: string, preheader: string, body: string): string {
 }
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey || !FROM_EMAIL) {
-    console.warn('Transactional email skipped: configure RESEND_API_KEY and a verified RESEND_FROM_EMAIL sender.');
-    return false;
+  if (gmailTransporter && GMAIL_USER) {
+    try {
+      await gmailTransporter.sendMail({
+        from: `CAMPORA <${GMAIL_USER}>`,
+        to,
+        subject,
+        html,
+      });
+      return true;
+    } catch (error) {
+      console.error('Gmail SMTP delivery failed; checking configured fallback:', error instanceof Error ? error.message : 'Unknown error');
+    }
   }
-  try {
-    const response = await fetch(RESEND_API_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, html }),
-    });
-    if (!response.ok) {
-      const detail = await response.text();
-      console.error('Resend rejected a transactional email:', response.status, detail.slice(0, 500));
+
+  const apiKey = process.env.RESEND_API_KEY;
+  if (apiKey && FROM_EMAIL) {
+    try {
+      const response = await fetch(RESEND_API_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: FROM_EMAIL, to: [to], subject, html }),
+      });
+      if (!response.ok) {
+        const detail = await response.text();
+        console.error('Resend fallback rejected a transactional email:', response.status, detail.slice(0, 500));
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Resend fallback delivery failed:', error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
-    return true;
-  } catch (error) {
-    console.error('Transactional email delivery failed:', error instanceof Error ? error.message : 'Unknown error');
-    return false;
   }
+
+  console.warn('Transactional email skipped: configure Gmail SMTP or a verified Resend sender.');
+  return false;
 }
 
 export async function sendVerificationEmail(to: string, name: string, token: string): Promise<boolean> {
