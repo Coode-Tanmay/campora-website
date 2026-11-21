@@ -1255,17 +1255,28 @@ app.get('/api/auth/customer/verify-email', async (req: Request, res: Response) =
 
 app.post('/api/auth/customer/password-reset/request', emailActionLimiter, async (req: Request, res: Response) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-  if (email.length <= 254 && email.includes('@')) {
+  let emailDeliveryAvailable = EMAIL_VERIFICATION_ENABLED;
+  if (emailDeliveryAvailable && email.length <= 254 && email.includes('@')) {
     const user = usersStore.find((item) => item.email.toLowerCase() === email && Boolean(item.passwordHash) && item.role === 'customer');
     if (user) {
       const token = randomBytes(32).toString('hex');
       user.passwordResetTokenHash = hashOneTimeToken(token);
       user.passwordResetExpiresAt = Date.now() + 30 * 60 * 1000;
       await persistState();
-      await sendPasswordResetEmail(user.email, user.name, token);
+      emailDeliveryAvailable = await sendPasswordResetEmail(user.email, user.name, token);
+      if (!emailDeliveryAvailable) {
+        delete user.passwordResetTokenHash;
+        delete user.passwordResetExpiresAt;
+        await persistState();
+      }
     }
   }
-  res.json({ success: true, message: 'If an account with that email exists, a password reset link will be sent.' });
+  // Keep the response generic to avoid revealing whether an account exists.
+  res.json({
+    success: true,
+    emailDeliveryAvailable,
+    message: 'If an account with that email exists, a password reset link will be sent when email recovery is available.',
+  });
 });
 
 app.get('/api/auth/customer/reset-password-page', (req: Request, res: Response) => {

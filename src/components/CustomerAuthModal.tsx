@@ -356,7 +356,12 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                   const address = email.trim() || window.prompt('Enter the email address for your CAMPORA account:') || '';
                   if (!address.trim()) return;
                   setError(null); setNotice(null); setIsLoading(true);
-                  try { const result = await api.requestPasswordReset(address.trim()); setNotice(result.message); }
+                  try {
+                    const result = await api.requestPasswordReset(address.trim());
+                    setNotice(result.emailDeliveryAvailable
+                      ? result.message
+                      : 'Email recovery is not configured yet. Please contact CAMPORA support for help accessing your account.');
+                  }
                   catch (err: any) { setError(err.message || 'Could not request a password reset. Please try again.'); }
                   finally { setIsLoading(false); }
                 }}>Forgot password?</button>

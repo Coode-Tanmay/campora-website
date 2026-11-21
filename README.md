@@ -95,17 +95,17 @@ Microsoft's redirect URI, if enabled later, must be:
 - The current in-memory rate limiter assumes one backend instance. Use a shared limiter store (for example Redis/Render Key Value) before scaling to multiple instances.
 - Keep a current backup/export of the Supabase database and test restoration before relying on it operationally.
 
-## Known limitations — not yet fully production-ready
+## Known limitations — pre-launch verification required
 
-These items need explicit product/operations decisions and end-to-end verification before CAMPORA should be treated as a mature commercial production system:
+The Phase 1 account-recovery and transactional-email code is implemented, but customer email delivery is currently inactive until a permitted sender identity is configured. Resend's shared test sender is not a production sender for arbitrary customers. No custom domain or paid email plan is assumed.
 
-1. Customer email/password registration currently creates accounts without an email-verification workflow. Password reset/recovery is not implemented.
-2. Order notifications and transactional email are not wired to an email delivery provider.
-3. Microsoft OAuth is not configured in production.
-4. Razorpay Standard Checkout integration is being prepared behind `RAZORPAY_ENABLED=false` by default. It cannot accept payments until the owner configures merchant credentials, webhook secret and explicitly enables the feature. The existing UPI/manual verification path remains available while Razorpay is disabled.
+1. Email/password registration and password recovery are implemented. New-account email verification remains disabled while no verified sender is configured; existing accounts remain accessible.
+2. Transactional email templates and event hooks are implemented for order receipt, payment proof/verification, order status and delivery. Actual delivery must be tested after a sender is configured.
+3. Microsoft OAuth is not configured in production; Google OAuth is configured.
+4. Razorpay Standard Checkout remains behind `RAZORPAY_ENABLED=false` by default. It cannot accept payments until the owner completes merchant onboarding, configures credentials and webhook secret, validates test mode, and explicitly approves live activation. The existing UPI/manual verification path remains available.
 5. The primary app state is a single JSONB document and in-process cache. This is a transitional architecture, not a high-concurrency multi-instance data model. Migrate to normalized transactional tables and shared concurrency control before scaling.
 6. File upload/download flows, admin workflows, and payment transitions still require controlled end-to-end tests using dedicated test accounts and test orders. Do not use real customer orders as test fixtures.
-7. The Render health-check path is configured as `/api/health`; the endpoint has returned healthy status. Continue monitoring health checks and deployment status.
+7. The Render health-check path is configured as `/api/health`; it has returned healthy status previously. Continue monitoring health checks and deployment status.
 
 ## Data safety
 

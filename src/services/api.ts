@@ -98,7 +98,7 @@ export const api = {
     return res;
   },
 
-  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string; emailDeliveryAvailable?: boolean }> {
     return fetchJson<{ success: boolean; message: string }>(`${API_BASE}/auth/customer/password-reset/request`, { method: 'POST', body: JSON.stringify({ email }) });
   },
 
