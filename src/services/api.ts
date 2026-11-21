@@ -137,7 +137,7 @@ export const api = {
     });
   },
 
-  async submitPaymentProof(orderId: string, payload: { utrNumber: string; screenshotUrl?: string; screenshotName?: string; screenshotSize?: string }): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
+  async submitPaymentProof(orderId: string, payload: { utrNumber?: string; screenshotUrl: string; screenshotName?: string; screenshotSize?: string }): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
     return fetchJson<{ success: boolean; order: CamporaOrder; message: string }>(`${API_BASE}/customer/orders/${orderId}/payment`, {
       method: 'POST',
       body: JSON.stringify(payload),
