@@ -25,7 +25,8 @@ function emailLayout(title: string, preheader: string, body: string): string {
   </body></html>`;
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+export async function sendEmail(to: string, subject: string, html: string, testMode = false): Promise<boolean> {
+  if (testMode) subject = `[TEST] ${subject}`;
   if (GOOGLE_APPS_SCRIPT_URL && GOOGLE_APPS_SCRIPT_TOKEN) {
     try {
       const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
@@ -65,24 +66,24 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   console.warn('Transactional email skipped: configure the Google Apps Script relay or a verified Resend sender.');
   return false;
 }
-export async function sendVerificationEmail(to: string, name: string, token: string): Promise<boolean> {
+export async function sendVerificationEmail(to: string, name: string, token: string, testMode = false): Promise<boolean> {
   const url = `${APP_URL}/api/auth/customer/verify-email?token=${encodeURIComponent(token)}`;
   const body = `<p>Hi ${escapeHtml(name)},</p><p>Welcome to CAMPORA. Please verify your email address to activate your account.</p><p style="margin:28px 0"><a href="${url}" style="display:inline-block;background:#d4a72c;color:#111;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:8px">Verify email address</a></p><p style="font-size:12px;color:#a1a1aa">This link expires in 24 hours. If you did not create this account, you can ignore this email.</p>`;
-  return sendEmail(to, 'Verify your CAMPORA email address', emailLayout('Verify your email', 'One quick step to activate your CAMPORA account.', body));
+  return sendEmail(to, 'Verify your CAMPORA email address', emailLayout('Verify your email', 'One quick step to activate your CAMPORA account.', body), testMode);
 }
 
-export async function sendPasswordResetEmail(to: string, name: string, token: string): Promise<boolean> {
+export async function sendPasswordResetEmail(to: string, name: string, token: string, testMode = false): Promise<boolean> {
   const url = `${APP_URL}/api/auth/customer/reset-password-page?token=${encodeURIComponent(token)}`;
   const body = `<p>Hi ${escapeHtml(name)},</p><p>We received a request to reset the password for your CAMPORA account.</p><p style="margin:28px 0"><a href="${url}" style="display:inline-block;background:#d4a72c;color:#111;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:8px">Reset password</a></p><p style="font-size:12px;color:#a1a1aa">This link expires in 30 minutes. If you did not request a reset, ignore this email; your password will remain unchanged.</p>`;
-  return sendEmail(to, 'Reset your CAMPORA password', emailLayout('Reset your password', 'A secure password reset was requested for your account.', body));
+  return sendEmail(to, 'Reset your CAMPORA password', emailLayout('Reset your password', 'A secure password reset was requested for your account.', body), testMode);
 }
 
-export async function sendOrderConfirmationEmail(to: string, name: string, orderId: string, service: string): Promise<boolean> {
+export async function sendOrderConfirmationEmail(to: string, name: string, orderId: string, service: string, testMode = false): Promise<boolean> {
   const body = `<p>Hi ${escapeHtml(name)},</p><p>Your order has been received successfully. Our team will review the details and update you as it progresses.</p><div style="margin:22px 0;padding:16px;background:#1d1d1d;border:1px solid #333;border-radius:10px"><div style="font-size:11px;color:#a1a1aa">ORDER NUMBER</div><strong style="color:#d4a72c">${escapeHtml(orderId)}</strong><div style="margin-top:10px;font-size:11px;color:#a1a1aa">SERVICE</div><strong>${escapeHtml(service)}</strong></div><p>You can sign in to CAMPORA to track your order.</p><p><a href="${APP_URL}" style="color:#d4a72c">Open CAMPORA</a></p>`;
-  return sendEmail(to, `CAMPORA order received · ${orderId}`, emailLayout('We received your order', 'Your CAMPORA order has been submitted.', body));
+  return sendEmail(to, `CAMPORA order received · ${orderId}`, emailLayout('We received your order', 'Your CAMPORA order has been submitted.', body), testMode);
 }
 
-export async function sendPaymentUpdateEmail(to: string, name: string, orderId: string, status: 'received' | 'confirmed' | 'rejected'): Promise<boolean> {
+export async function sendPaymentUpdateEmail(to: string, name: string, orderId: string, status: 'received' | 'confirmed' | 'rejected', testMode = false): Promise<boolean> {
   const content = status === 'received'
     ? 'Your payment reference has been received. Our team will verify it and update your order.'
     : status === 'confirmed'
@@ -90,17 +91,17 @@ export async function sendPaymentUpdateEmail(to: string, name: string, orderId: 
       : 'Your submitted payment proof could not be verified. Please sign in and review the payment instructions or contact support.';
   const title = status === 'received' ? 'Payment proof received' : status === 'confirmed' ? 'Payment confirmed' : 'Payment needs attention';
   const body = `<p>Hi ${escapeHtml(name)},</p><p>${content}</p><p style="margin:22px 0;padding:14px;background:#1d1d1d;border:1px solid #333;border-radius:10px">Order: <strong style="color:#d4a72c">${escapeHtml(orderId)}</strong></p><p><a href="${APP_URL}" style="color:#d4a72c">Open CAMPORA</a></p>`;
-  return sendEmail(to, `CAMPORA · ${title} · ${orderId}`, emailLayout(title, content, body));
+  return sendEmail(to, `CAMPORA · ${title} · ${orderId}`, emailLayout(title, content, body), testMode);
 }
 
-export async function sendOrderStatusEmail(to: string, name: string, orderId: string, status: string, detail?: string): Promise<boolean> {
+export async function sendOrderStatusEmail(to: string, name: string, orderId: string, status: string, detail?: string, testMode = false): Promise<boolean> {
   const labels: Record<string, string> = { approved: 'Your order is approved', rejected: 'An update about your order', cancelled: 'Your order was cancelled', in_progress: 'Your work is in progress', completed: 'Your order is complete' };
   const title = labels[status] || 'Your order has been updated';
   const body = `<p>Hi ${escapeHtml(name)},</p><p>Your CAMPORA order <strong style="color:#d4a72c">${escapeHtml(orderId)}</strong> is now: <strong>${escapeHtml(status.replace(/_/g, ' '))}</strong>.</p>${detail ? `<p>${escapeHtml(detail)}</p>` : ''}<p><a href="${APP_URL}" style="color:#d4a72c">Sign in to view your order</a></p>`;
-  return sendEmail(to, `CAMPORA · ${title} · ${orderId}`, emailLayout(title, 'There is a new update to your CAMPORA order.', body));
+  return sendEmail(to, `CAMPORA · ${title} · ${orderId}`, emailLayout(title, 'There is a new update to your CAMPORA order.', body), testMode);
 }
 
-export async function sendDeliveryEmail(to: string, name: string, orderId: string): Promise<boolean> {
+export async function sendDeliveryEmail(to: string, name: string, orderId: string, testMode = false): Promise<boolean> {
   const body = `<p>Hi ${escapeHtml(name)},</p><p>Your CAMPORA order <strong style="color:#d4a72c">${escapeHtml(orderId)}</strong> has been marked complete and your deliverables are available in your customer portal.</p><p><a href="${APP_URL}" style="display:inline-block;background:#d4a72c;color:#111;text-decoration:none;font-weight:700;padding:13px 22px;border-radius:8px">View my deliverables</a></p>`;
-  return sendEmail(to, `Your CAMPORA order is ready · ${orderId}`, emailLayout('Your work is ready', 'Your completed CAMPORA deliverables are available.', body));
+  return sendEmail(to, `Your CAMPORA order is ready · ${orderId}`, emailLayout('Your work is ready', 'Your completed CAMPORA deliverables are available.', body), testMode);
 }
