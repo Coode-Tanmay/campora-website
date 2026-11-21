@@ -221,6 +221,10 @@ export const api = {
     return fetchJson<{ customers: any[] }>(`${API_BASE}/admin/customers`);
   },
 
+  async exportAdminBackup(): Promise<{ exportedAt: string; note: string; orders: CamporaOrder[] }> {
+    return fetchJson<{ exportedAt: string; note: string; orders: CamporaOrder[] }>(`${API_BASE}/admin/backup`);
+  },
+
   async getAdminFiles(): Promise<{ files: any[] }> {
     return fetchJson<{ files: any[] }>(`${API_BASE}/admin/files`);
   },
