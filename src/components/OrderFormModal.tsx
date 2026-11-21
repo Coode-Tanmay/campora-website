@@ -315,6 +315,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const handleFinalSubmit = async () => {
     setIsProcessing(true);
     setStepError('');
+    setPaymentProofSubmitted(false);
 
     const initialStatus: OrderStatus = requiresAdminReview ? 'requirements_review' : 'new_order';
     const initialQuoteStatus: QuoteStatus = requiresAdminReview ? 'pending' : 'not_required';
