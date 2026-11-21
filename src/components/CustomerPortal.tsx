@@ -335,8 +335,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                         style={{ width: `${ord.progressPercent}%` }}
                       />
                     </div>
-                  </div>
-
                   </div> : <div className="my-4 text-xs text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">Order tracking becomes available after payment verification.</div>}
 
                   {/* Order Specs & Action Buttons */}
