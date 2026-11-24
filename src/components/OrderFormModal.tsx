@@ -552,7 +552,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               </div>
             ) : null}
 
-
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               {!createdOrderSummary.requiresReview && !paymentProofSubmitted && !orderCancelled && (
                 <button
                   type="button"
