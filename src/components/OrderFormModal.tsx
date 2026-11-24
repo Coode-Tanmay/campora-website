@@ -130,13 +130,18 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
   const isOverLimit = pagesOrSlides > 20;
   const requiresAdminReview = isVariableService || isOverLimit;
 
-  // Dynamic Base Price calculation
-  let calculatedSubtotal = currentService.price;
+  // Apply the approved 30% urgent surcharge to urgent services or rush deadlines.
+  let baseSubtotal = currentService.price;
   if (currentService.id === 'urgent-ppt') {
-    calculatedSubtotal = 400;
+    baseSubtotal = 400;
   } else if (currentService.id === 'online-assistance') {
-    calculatedSubtotal = 0;
+    baseSubtotal = 0;
   }
+  const isUrgentRequest = Boolean(currentService.isUrgent)
+    || deadline.startsWith('Urgent')
+    || deadline.startsWith('Critical Rush');
+  const urgentSurcharge = isUrgentRequest && baseSubtotal > 0 ? Math.round(baseSubtotal * 0.30 * 100) / 100 : 0;
+  const calculatedSubtotal = Math.round((baseSubtotal + urgentSurcharge) * 100) / 100;
 
   // Calculate total with discount
   const finalTotal = isVariableService && currentService.price === 0
@@ -344,6 +349,8 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
       templateInstructions: hasCollegeTemplate ? templateInstructions : undefined,
       referenceFiles: referenceFiles.map(({ file, ...attachment }) => attachment),
       subtotal: calculatedSubtotal,
+      urgentSurchargePercent: isUrgentRequest ? 30 : 0,
+      urgentSurchargeAmount: urgentSurcharge,
       finalPrice: finalTotal,
       discount: appliedDiscount,
       couponCode: appliedDiscount > 0 ? couponCode : undefined,
@@ -1106,6 +1113,12 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                       </div>
                     )}
 
+                    {urgentSurcharge > 0 && (
+                      <div className="flex justify-between text-[#F0D27A] font-medium">
+                        <span>Urgent delivery surcharge (30%):</span>
+                        <span>+₹{urgentSurcharge.toFixed(2)}</span>
+                      </div>
+                    )}
                     {appliedDiscount > 0 && (
                       <div className="flex justify-between text-[#35C759] font-medium">
                         <span>Discount Applied:</span>
