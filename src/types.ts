@@ -12,7 +12,7 @@ export interface AuthUser {
   createdAt?: string;
 }
 
-export type ServiceCategory = 'all' | 'presentations' | 'documentation' | 'design' | 'internship';
+export type ServiceCategory = 'all' | 'presentations' | 'documentation' | 'pdf' | 'design' | 'development' | 'career' | 'data' | 'internship';
 
 export type PricingType = 'fixed' | 'variable';
 
