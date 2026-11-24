@@ -1986,6 +1986,46 @@ app.get('/api/admin/orders', requireAdmin, async (req: RequestWithUser, res: Res
   res.json({ orders: hydratedOrders, total: filtered.length });
 });
 
+// Per-order support conversation. Messages are stored with the order and access is role/owner checked.
+app.get('/api/customer/orders/:id/messages', requireAuth, (req: RequestWithUser, res: Response) => {
+  const order = ordersStore.find(o => o.id.toLowerCase() === req.params.id.toLowerCase());
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (req.user!.role !== 'admin' && (req.user!.role !== 'customer' || order.customerId !== req.user!.id)) {
+    return res.status(403).json({ error: 'You cannot view this conversation.' });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ messages: (order as any).supportMessages || [] });
+});
+app.get('/api/admin/orders/:id/messages', requireAdmin, (req: RequestWithUser, res: Response) => {
+  const order = ordersStore.find(o => o.id.toLowerCase() === req.params.id.toLowerCase());
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ messages: (order as any).supportMessages || [] });
+});
+app.post('/api/customer/orders/:id/messages', requireAuth, async (req: RequestWithUser, res: Response) => {
+  const orderIndex = ordersStore.findIndex(o => o.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex < 0) return res.status(404).json({ error: 'Order not found.' });
+  const order = ordersStore[orderIndex];
+  if (req.user!.role !== 'customer' || order.customerId !== req.user!.id) return res.status(403).json({ error: 'You cannot message about this order.' });
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (!message || message.length > 2000) return res.status(400).json({ error: 'Message must be between 1 and 2000 characters.' });
+  const updated = { ...(order as any), supportMessages: [...((order as any).supportMessages || []), { id: `msg-${randomBytes(8).toString('hex')}`, senderRole: 'customer', senderName: req.user!.name || 'Customer', message, createdAt: new Date().toISOString() }].slice(-200), updatedAt: new Date().toISOString() };
+  ordersStore[orderIndex] = updated;
+  try { await persistState(); } catch (error) { ordersStore[orderIndex] = order; throw error; }
+  res.status(201).json({ success: true, messages: updated.supportMessages });
+});
+app.post('/api/admin/orders/:id/messages', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const orderIndex = ordersStore.findIndex(o => o.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex < 0) return res.status(404).json({ error: 'Order not found.' });
+  const order = ordersStore[orderIndex];
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (!message || message.length > 2000) return res.status(400).json({ error: 'Message must be between 1 and 2000 characters.' });
+  const updated = { ...(order as any), supportMessages: [...((order as any).supportMessages || []), { id: `msg-${randomBytes(8).toString('hex')}`, senderRole: 'admin', senderName: req.user!.name || 'CAMPORA Support', message, createdAt: new Date().toISOString() }].slice(-200), updatedAt: new Date().toISOString() };
+  ordersStore[orderIndex] = updated;
+  try { await persistState(); } catch (error) { ordersStore[orderIndex] = order; throw error; }
+  res.status(201).json({ success: true, messages: updated.supportMessages });
+});
+
 // Admin Order Status Update (Approve, Reject, Cancel, In Progress, Review, Completed)
 app.patch('/api/admin/orders/:id/status', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
