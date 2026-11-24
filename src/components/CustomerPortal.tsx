@@ -78,9 +78,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
 
   const fetchCartAndWallet = async () => {
     try {
-      const [cart, walletData] = await Promise.all([api.getCustomerCart(), api.getWallet()]);
+      const [cart, walletData, activeCheckout] = await Promise.all([api.getCustomerCart(), api.getWallet(), api.getActiveCombinedCheckout()]);
       setCartItems(cart.items || []);
       setWallet(walletData);
+      if (activeCheckout.checkout) setCombinedCheckout(activeCheckout.checkout);
     } catch (err) {
       console.error('Unable to refresh CAMPORA cart or wallet:', err);
     }
@@ -553,8 +554,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     <div className="flex justify-between"><span className="text-zinc-400">CAMPORA Cash</span><span className="text-amber-300">−₹{combinedCheckout.cashRedeemed.toFixed(2)}</span></div>
                     <div className="flex justify-between font-bold text-white text-sm"><span>Pay by UPI</span><span>₹{combinedCheckout.amountDue.toFixed(2)}</span></div>
                   </div>
-                  {combinedCheckout.paymentStatus === 'pending' ? (
+                  {['pending','rejected'].includes(combinedCheckout.paymentStatus) ? (
                     <div className="space-y-3 border-t border-zinc-800 pt-3">
+                      {combinedCheckout.paymentStatus === 'rejected' && <p className="text-xs text-red-300">The previous payment proof was rejected. Please check with CAMPORA and submit corrected proof after confirming the payment details.</p>}
                       <p className="text-xs text-zinc-300">Scan this QR and pay ₹{combinedCheckout.amountDue.toFixed(2)} once for all orders in this checkout.</p>
                       <div className="flex flex-col items-center rounded-xl bg-white p-4 w-fit mx-auto">{combinedQr ? <img src={combinedQr} alt="Combined CAMPORA UPI payment QR" className="w-52 h-52" /> : <div className="w-52 h-52 bg-zinc-100" />}</div>
                       <div className="text-center text-[11px] text-zinc-400">UPI ID: <span className="font-mono text-white">{UPI_ID}</span></div>
