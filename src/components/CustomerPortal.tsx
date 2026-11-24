@@ -82,6 +82,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
       setCartItems(cart.items || []);
       setWallet(walletData);
       if (activeCheckout.checkout) setCombinedCheckout(activeCheckout.checkout);
+      else setCombinedCheckout(null);
     } catch (err) {
       console.error('Unable to refresh CAMPORA cart or wallet:', err);
     }
