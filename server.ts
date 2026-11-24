@@ -2085,13 +2085,23 @@ app.patch('/api/admin/checkout-batches/:id/payment', requireAdmin, async (req: R
   }
   const now = new Date().toISOString();
   const originals = batchOrders as CamporaOrder[];
-  const updated = originals.map((order) => ({
-    ...order, paymentStatus: 'paid' as const,
-    paymentDetails: { ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }), upiId: 'tanmayvbhagat-1@oksbi', amountPaid: Number(order.finalPrice ?? order.total), utrNumber: batch.utr_number || undefined, screenshotName: batch.screenshot_name || undefined, verifiedAt: now, verifiedBy: req.user?.name || 'CAMPORA Admin' },
-    activityHistory: [...(order.activityHistory || []), { id: `act-${randomBytes(4).toString('hex')}`, action: 'combined_payment_verified', description: `Combined payment ${batch.id} verified by CAMPORA Admin.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
-    timeline: (order.timeline || []).map((step) => step.id === 't3' || step.title.toLowerCase().includes('payment') ? { ...step, title: 'Payment Confirmed', description: `Payment verified as part of combined checkout ${batch.id}.`, status: 'completed' as const, timestamp: now } : step),
-    updatedAt: now,
-  }));
+  const grossTotal = originals.reduce((sum, order) => sum + Number(order.finalPrice ?? order.total), 0);
+  let cashRemaining = debit;
+  const updated = originals.map((order, index) => {
+    const gross = Number(order.finalPrice ?? order.total);
+    const cashShare = index === originals.length - 1
+      ? cashRemaining
+      : Math.min(cashRemaining, Math.round((grossTotal > 0 ? debit * gross / grossTotal : 0) * 100) / 100);
+    cashRemaining = Math.max(0, Math.round((cashRemaining - cashShare) * 100) / 100);
+    const upiPaidForOrder = Math.max(0, Math.round((gross - cashShare) * 100) / 100);
+    return {
+      ...order, paymentStatus: 'paid' as const,
+      paymentDetails: { ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }), upiId: 'tanmayvbhagat-1@oksbi', amountPaid: upiPaidForOrder, utrNumber: batch.utr_number || undefined, screenshotName: batch.screenshot_name || undefined, verifiedAt: now, verifiedBy: req.user?.name || 'CAMPORA Admin' },
+      activityHistory: [...(order.activityHistory || []), { id: `act-${randomBytes(4).toString('hex')}`, action: 'combined_payment_verified', description: `Combined payment ${batch.id} verified. UPI allocated ₹${upiPaidForOrder.toFixed(2)} and CAMPORA Cash allocated ₹${cashShare.toFixed(2)}.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
+      timeline: (order.timeline || []).map((step) => step.id === 't3' || step.title.toLowerCase().includes('payment') ? { ...step, title: 'Payment Confirmed', description: `Payment verified as part of combined checkout ${batch.id}.`, status: 'completed' as const, timestamp: now } : step),
+      updatedAt: now,
+    };
+  });
   const { error: batchUpdateError } = await supabase.from('campora_checkout_batches').update({ payment_status: 'paid', verified_at: now, verified_by: req.user?.name || 'CAMPORA Admin', updated_at: now }).eq('id', batch.id).eq('payment_status', 'verification_pending');
   if (batchUpdateError) {
     if (debit > 0) await supabase.rpc('campora_wallet_apply_entry', { p_customer_id: batch.customer_id, p_entry_type: 'admin_adjustment', p_amount: debit, p_reference_key: `${batch.id}:rollback`, p_description: `Rollback of failed combined checkout ${batch.id}` });
