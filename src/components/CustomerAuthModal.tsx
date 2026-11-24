@@ -25,6 +25,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
   const [name, setName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [college, setCollege] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'microsoft' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
         name: name || undefined,
         whatsapp: whatsapp || undefined,
         college: college || undefined,
+        referralCode: mode === 'register' ? referralCode.trim().toUpperCase() || undefined : undefined,
       });
       if (result.verificationRequired) {
         setNotice('We sent a verification link to your email. Verify your address, then sign in.');
@@ -284,6 +286,12 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
                       className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-300 mb-1">Referral Code (optional)</label>
+                  <input id="input-customer-referral-code" type="text" value={referralCode} onChange={(e) => setReferralCode(e.target.value.toUpperCase())} placeholder="Enter a friend's CAMPORA code" maxLength={24} className="w-full bg-[#1A1A1D] border border-zinc-800 focus:border-[#D4A72C] rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none" />
+                  <p className="text-[10px] text-zinc-500 mt-1">Referral codes are for new email registrations only and can be used once.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
