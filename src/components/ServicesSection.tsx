@@ -45,7 +45,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
       'Budget (optional):',
       '',
       'Please review my requirements and share the estimated price and next steps. I understand this is a quote request, not a confirmed order.'
-    ].join('\\n');
+    ].join('\n');
     return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
   };
 
