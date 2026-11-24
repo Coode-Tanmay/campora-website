@@ -258,6 +258,9 @@ export const api = {
   async adjustReferralUsage(code: string, newUsageCount: number, reason: string): Promise<{ success: boolean; usageCount: number; message: string }> {
     return fetchJson(`${API_BASE}/admin/referrals/${encodeURIComponent(code)}/usage`, { method: 'PATCH', body: JSON.stringify({ newUsageCount, reason }) });
   },
+  async completeOrderRefund(orderId: string, reason: string): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
+    return fetchJson(`${API_BASE}/admin/orders/${encodeURIComponent(orderId)}/refund`, { method: 'PATCH', body: JSON.stringify({ reason }) });
+  },
 
   async getAdminCustomers(): Promise<{ customers: any[] }> {
     return fetchJson<{ customers: any[] }>(`${API_BASE}/admin/customers`);
