@@ -42,6 +42,39 @@ const loadRazorpayCheckout = (): Promise<boolean> => new Promise((resolve) => {
   document.body.appendChild(script);
 });
 
+type CustomerOrderFilter = 'active' | 'completed' | 'all' | 'cancelled';
+
+const getCustomerDeadlineDurationMs = (deadline: string): number => {
+  if (/1\\s*[-–]\\s*3\\s*hours?/i.test(deadline) || /1\\s*[-–]\\s*3\\s*hrs?/i.test(deadline)) return 3 * 60 * 60 * 1000;
+  if (/12\\s*[-–]\\s*24/i.test(deadline)) return 24 * 60 * 60 * 1000;
+  if (/24\\s*[-–]\\s*48/i.test(deadline)) return 48 * 60 * 60 * 1000;
+  if (/3\\s*\\+\\s*days?/i.test(deadline)) return 72 * 60 * 60 * 1000;
+  return 24 * 60 * 60 * 1000;
+};
+
+const CustomerOrderCountdown: React.FC<{ order: CamporaOrder }> = ({ order }) => {
+  const [remainingMs, setRemainingMs] = useState(() => {
+    const created = new Date(order.createdAt).getTime();
+    return Number.isFinite(created) ? Math.max(0, created + getCustomerDeadlineDurationMs(order.deadline) - Date.now()) : 0;
+  });
+  useEffect(() => {
+    const update = () => {
+      const created = new Date(order.createdAt).getTime();
+      const due = created + getCustomerDeadlineDurationMs(order.deadline);
+      setRemainingMs(Number.isFinite(due) ? Math.max(0, due - Date.now()) : 0);
+    };
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [order.createdAt, order.deadline]);
+  const seconds = Math.floor(remainingMs / 1000);
+  const format = (value: number) => String(value).padStart(2, '0');
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return <span className={`inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded border text-[10px] font-bold tabular-nums ${remainingMs > 0 ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' : 'bg-red-500/10 border-red-500/20 text-red-300'}`}><Clock className="w-3 h-3" />{remainingMs > 0 ? `Time left ${format(hours)}:${format(minutes)}:${format(secs)}` : 'Deadline reached'}</span>;
+};
+
 interface CustomerPortalProps {
   onBackToHome: () => void;
   onNewOrder: () => void;
@@ -50,6 +83,7 @@ interface CustomerPortalProps {
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, onNewOrder }) => {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'orders' | 'cart' | 'files' | 'payments' | 'profile' | 'referrals'>('orders');
+  const [orderFilter, setOrderFilter] = useState<CustomerOrderFilter>('active');
   const [orders, setOrders] = useState<CamporaOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +170,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
     }
     try {
       const res = await api.getCustomerOrders();
-      setOrders((res.orders || []).filter((order) => order.status !== 'cancelled'));
+      setOrders(res.orders || []);
     } catch (err: any) {
       if (showLoading) setError(err.message || 'Failed to load your orders.');
     } finally {
@@ -395,12 +429,24 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
         {/* ================= TABS: ORDERS ================= */}
         {activeTab === 'orders' && (
           <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-[#121215] border border-zinc-800 p-2">
+              {([
+                ['active', 'Active Orders', orders.filter((order) => !['completed','cancelled','rejected'].includes(order.status)).length],
+                ['completed', 'Completed Orders', orders.filter((order) => order.status === 'completed').length],
+                ['all', 'All Orders', orders.length],
+                ['cancelled', 'Cancelled Orders', orders.filter((order) => order.status === 'cancelled').length],
+              ] as [CustomerOrderFilter, string, number][]).map(([key, label, count]) => (
+                <button key={key} onClick={() => setOrderFilter(key)} className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${orderFilter === key ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}>
+                  {label} <span className={`ml-1 ${orderFilter === key ? 'text-black/70' : 'text-zinc-500'}`}>({count})</span>
+                </button>
+              ))}
+            </div>
             {isLoading ? (
               <div className="p-12 text-center text-zinc-400 text-sm">
                 <Clock className="w-6 h-6 animate-spin mx-auto mb-2 text-amber-400" />
                 Loading your orders...
               </div>
-            ) : orders.length === 0 ? (
+            ) : orders.filter((ord) => orderFilter === 'all' || (orderFilter === 'active' ? !['completed','cancelled','rejected'].includes(ord.status) : orderFilter === 'completed' ? ord.status === 'completed' : ord.status === 'cancelled')).length === 0 ? (
               <div className="p-12 text-center rounded-2xl bg-[#121215] border border-zinc-800">
                 <Package className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-white mb-1">No Orders Found</h3>
@@ -415,7 +461,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                 </button>
               </div>
             ) : (
-              orders.map((ord) => (
+              orders.filter((ord) => orderFilter === 'all' || (orderFilter === 'active' ? !['completed','cancelled','rejected'].includes(ord.status) : orderFilter === 'completed' ? ord.status === 'completed' : ord.status === 'cancelled')).map((ord) => (
                 <div
                   key={ord.id}
                   id={`order-card-${ord.id}`}
@@ -468,6 +514,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     <div className="flex items-center gap-4 flex-wrap">
                       <span>Pages/Slides: <strong className="text-zinc-200">{ord.pagesOrSlides}</strong></span>
                       <span>Delivery: <strong className="text-zinc-200">{ord.deadline}</strong></span>
+                      {!['completed','cancelled','rejected'].includes(ord.status) && <CustomerOrderCountdown order={ord} />}
                       {ord.hasCollegeTemplate && (
                         <span className="text-amber-400/90 font-medium flex items-center gap-1">
                           <Check className="w-3.5 h-3.5" /> Official College Template
@@ -476,9 +523,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {['pending', 'rejected'].includes(ord.paymentStatus) && (
+                      {ord.status !== 'cancelled' && ['pending', 'rejected'].includes(ord.paymentStatus) && (
                         <>
-                          {razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
+                          {ord.status !== 'cancelled' && razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
                             <button
                               id={`btn-razorpay-${ord.id}`}
                               disabled={startingPaymentFor === ord.id}
