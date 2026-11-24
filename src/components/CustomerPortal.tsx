@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import {
   User,
   Package,
@@ -30,6 +31,7 @@ import { CamporaOrder, TimelineStep } from '../types';
 import { api } from '../services/api';
 import { ManualPaymentSection } from './ManualPaymentSection';
 import { CustomerNotificationCenter } from './CustomerNotificationCenter';
+import { UPI_ID } from './UpiPaymentCard';
 
 const loadRazorpayCheckout = (): Promise<boolean> => new Promise((resolve) => {
   if ((window as any).Razorpay) { resolve(true); return; }
@@ -64,7 +66,15 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   const [combinedScreenshot, setCombinedScreenshot] = useState<File | null>(null);
   const [combinedSubmitting, setCombinedSubmitting] = useState(false);
   const [cartBusy, setCartBusy] = useState(false);
+  const [combinedQr, setCombinedQr] = useState('');
 
+
+  useEffect(() => {
+    if (!combinedCheckout || combinedCheckout.paymentStatus !== 'pending') { setCombinedQr(''); return; }
+    const uri = `upi://pay?pa=${UPI_ID}&pn=CAMPORA&am=${combinedCheckout.amountDue}&cu=INR&tn=${encodeURIComponent(`CAMPORA Checkout ${combinedCheckout.id}`)}`;
+    QRCode.toDataURL(uri, { width: 320, margin: 2, color: { dark: '#0B0B0B', light: '#FFFFFF' }, errorCorrectionLevel: 'H' })
+      .then(setCombinedQr).catch(() => setCombinedQr(''));
+  }, [combinedCheckout?.id, combinedCheckout?.amountDue, combinedCheckout?.paymentStatus]);
 
   const fetchCartAndWallet = async () => {
     try {
@@ -545,7 +555,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                   </div>
                   {combinedCheckout.paymentStatus === 'pending' ? (
                     <div className="space-y-3 border-t border-zinc-800 pt-3">
-                      <p className="text-xs text-zinc-300">Pay ₹{combinedCheckout.amountDue.toFixed(2)} using the CAMPORA UPI QR, then submit one screenshot for this checkout.</p>
+                      <p className="text-xs text-zinc-300">Scan this QR and pay ₹{combinedCheckout.amountDue.toFixed(2)} once for all orders in this checkout.</p>
+                      <div className="flex flex-col items-center rounded-xl bg-white p-4 w-fit mx-auto">{combinedQr ? <img src={combinedQr} alt="Combined CAMPORA UPI payment QR" className="w-52 h-52" /> : <div className="w-52 h-52 bg-zinc-100" />}</div>
+                      <div className="text-center text-[11px] text-zinc-400">UPI ID: <span className="font-mono text-white">{UPI_ID}</span></div>
                       <div><label className="block text-[11px] text-zinc-400 mb-1">UTR / Transaction ID (optional)</label><input value={combinedUtr} onChange={(e) => setCombinedUtr(e.target.value)} className="w-full rounded-lg bg-black border border-zinc-700 px-3 py-2 text-xs text-white" placeholder="Enter UTR number" /></div>
                       <div><label className="block text-[11px] text-zinc-400 mb-1">Payment screenshot (required, PNG/JPG, max 500 KB)</label><input type="file" accept="image/png,image/jpeg" onChange={(e) => setCombinedScreenshot(e.target.files?.[0] || null)} className="block w-full text-xs text-zinc-300" /></div>
                       <button onClick={handleSubmitCombinedProof} disabled={!combinedScreenshot || combinedSubmitting} className="px-4 py-2.5 rounded-lg bg-amber-500 disabled:opacity-50 text-black text-xs font-bold">{combinedSubmitting ? 'Submitting…' : 'Submit Combined Payment Proof'}</button>
