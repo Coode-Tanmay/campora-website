@@ -5,12 +5,10 @@ import { Check, Sparkles, Clock, ArrowRight, MessageCircle, Info, ShieldCheck, F
 
 interface ServicesSectionProps {
   onSelectService: (serviceId: string) => void;
-  onOpenCustomQuote: () => void;
 }
 
 export const ServicesSection: React.FC<ServicesSectionProps> = ({
   onSelectService,
-  onOpenCustomQuote,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<ServiceCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,6 +31,23 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
   });
 
   const whatsappNumber = '917559225529';
+  const quoteWhatsAppUrl = (serviceTitle = 'Custom academic project') => {
+    const message = [
+      'Hi CAMPORA Team! I would like to request a custom quote.',
+      '',
+      `Service / Requirement: ${serviceTitle}`,
+      'My name:',
+      'College / University:',
+      'Topic / Project details:',
+      'Pages / Slides (if applicable):',
+      'Deadline:',
+      'Reference files: I will attach them here.',
+      'Budget (optional):',
+      '',
+      'Please review my requirements and share the estimated price and next steps. I understand this is a quote request, not a confirmed order.'
+    ].join('\\n');
+    return `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+  };
 
   return (
     <section id="services-section" className="py-16 lg:py-24 relative bg-[#0B0B0B]">
@@ -193,20 +208,39 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
 
                 {/* Bottom Order Action */}
                 <div className="mt-8 pt-4 border-t border-[#2A2A2A]">
-                  <button
-                    id={`btn-order-${service.id}`}
-                    onClick={() => onSelectService(service.id)}
-                    className={`w-full py-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
-                      isPopular
-                        ? 'bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] shadow-lg shadow-[#D4A72C]/20'
-                        : isUrgent
-                        ? 'bg-[#1D1D1D] text-[#FF5A5F] border border-[#FF5A5F]/40 hover:bg-[#FF5A5F] hover:text-white'
-                        : 'bg-[#1D1D1D] text-white hover:bg-[#D4A72C] hover:text-[#0B0B0B] border border-[#2A2A2A]'
-                    }`}
-                  >
-                    <span>{isVariable ? 'Request Quote for ' + service.title : 'Order ' + service.title}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  {isVariable ? (
+                    <a
+                      id={`btn-order-${service.id}`}
+                      href={quoteWhatsAppUrl(service.title)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`w-full py-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        isPopular
+                          ? 'bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] shadow-lg shadow-[#D4A72C]/20'
+                          : isUrgent
+                          ? 'bg-[#1D1D1D] text-[#FF5A5F] border border-[#FF5A5F]/40 hover:bg-[#FF5A5F] hover:text-white'
+                          : 'bg-[#1D1D1D] text-white hover:bg-[#D4A72C] hover:text-[#0B0B0B] border border-[#2A2A2A]'
+                      }`}
+                    >
+                      <span>Request Quote for {service.title}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </a>
+                  ) : (
+                    <button
+                      id={`btn-order-${service.id}`}
+                      onClick={() => onSelectService(service.id)}
+                      className={`w-full py-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                        isPopular
+                          ? 'bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] shadow-lg shadow-[#D4A72C]/20'
+                          : isUrgent
+                          ? 'bg-[#1D1D1D] text-[#FF5A5F] border border-[#FF5A5F]/40 hover:bg-[#FF5A5F] hover:text-white'
+                          : 'bg-[#1D1D1D] text-white hover:bg-[#D4A72C] hover:text-[#0B0B0B] border border-[#2A2A2A]'
+                      }`}
+                    >
+                      <span>Order {service.title}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -229,16 +263,18 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-            <button
+            <a
               id="custom-quote-btn"
-              onClick={onOpenCustomQuote}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-full text-xs sm:text-sm font-bold text-[#0B0B0B] bg-[#D4A72C] hover:bg-[#E5B93F] transition-all shadow-md"
+              href={quoteWhatsAppUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-full text-xs sm:text-sm font-bold text-[#0B0B0B] bg-[#D4A72C] hover:bg-[#E5B93F] transition-all shadow-md text-center"
             >
               Get a Custom Quote
-            </button>
+            </a>
             <a
               id="custom-whatsapp-btn"
-              href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hi CAMPORA, I have a custom academic requirement. Can we discuss?')}`}
+              href={quoteWhatsAppUrl()}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-full text-xs sm:text-sm font-semibold text-[#B8B8B8] bg-[#1D1D1D] border border-[#2A2A2A] hover:text-white hover:border-[#D4A72C] transition-all"
