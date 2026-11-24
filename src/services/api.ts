@@ -125,6 +125,15 @@ export const api = {
     });
   },
 
+  async getOrderMessages(orderId: string, admin = false): Promise<{ messages: Array<{ id: string; senderRole: 'customer' | 'admin'; senderName: string; message: string; createdAt: string }> }> {
+    const base = admin ? `${API_BASE}/admin/orders` : `${API_BASE}/customer/orders`;
+    return fetchJson(`${base}/${encodeURIComponent(orderId)}/messages`);
+  },
+  async sendOrderMessage(orderId: string, message: string, admin = false): Promise<{ success: boolean; messages: Array<{ id: string; senderRole: 'customer' | 'admin'; senderName: string; message: string; createdAt: string }> }> {
+    const base = admin ? `${API_BASE}/admin/orders` : `${API_BASE}/customer/orders`;
+    return fetchJson(`${base}/${encodeURIComponent(orderId)}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
+  },
+
   // Customer Orders (Strictly user-scoped)
   async getCustomerOrders(): Promise<{ orders: CamporaOrder[] }> {
     return fetchJson<{ orders: CamporaOrder[] }>(`${API_BASE}/customer/orders`);
