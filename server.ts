@@ -1633,7 +1633,21 @@ app.post('/api/customer/orders', orderCreationLimiter, requireAuth, express.json
     return;
   }
 
-  const service = SERVICES_DATA.find((item) => item.id === data.serviceId);
+  const service = data.serviceId === 'website-development'
+    ? ({
+        id: 'website-development',
+        title: 'Website Development',
+        category: 'internship',
+        price: 0,
+        currency: '₹',
+        turnaround: 'To be confirmed',
+        unit: 'custom website',
+        pricingType: 'variable',
+        description: 'Custom website development quote request.',
+        features: [],
+        supportsTemplate: false,
+      } as (typeof SERVICES_DATA)[number])
+    : SERVICES_DATA.find((item) => item.id === data.serviceId);
   if (!service) {
     res.status(400).json({ error: 'Please select a valid CAMPORA service.' });
     return;
