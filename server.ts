@@ -1203,7 +1203,7 @@ app.post('/api/auth/admin/login', adminLoginLimiter, async (req: Request, res: R
 
 // Customer Email/Password Login & Register
 app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, res: Response) => {
-  const { email, password, name, whatsapp, college } = req.body;
+  const { email, password, name, whatsapp, college, referralCode } = req.body;
 
   if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
     res.status(400).json({ error: 'A valid email and password are required.' });
@@ -1253,6 +1253,20 @@ app.post('/api/auth/customer/login', customerLoginLimiter, async (req: Request, 
     }
     usersStore.push(newCustomer);
     user = newCustomer;
+    if (typeof referralCode === 'string' && referralCode.trim()) {
+      const { error: referralError } = await supabase.rpc('campora_use_referral_code', {
+        p_code: referralCode.trim(), p_customer_id: newCustomer.id,
+      });
+      if (referralError) {
+        usersStore = usersStore.filter((item) => item.id !== newCustomer.id);
+        const message = referralError.message.includes('limit') ? 'This referral code has already been used by 3 new customers.' :
+          referralError.message.includes('Self-referrals') ? 'You cannot use your own referral code.' :
+          referralError.message.includes('already been used') ? 'A referral code can only be used once on a new account.' :
+          'The referral code is invalid or unavailable.';
+        res.status(400).json({ error: message });
+        return;
+      }
+    }
   } else {
     if (!user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
       res.status(401).json({ error: 'Invalid email or password.' });
@@ -2083,6 +2097,26 @@ app.patch('/api/admin/checkout-batches/:id/payment', requireAdmin, async (req: R
 });
 
 
+async function creditReferralForCompletedOrder(order: CamporaOrder): Promise<void> {
+  if (order.paymentStatus !== 'paid' || order.status !== 'completed') return;
+  const { data: referralUse, error } = await supabase.from('campora_referral_uses')
+    .select('referred_customer_id,referrer_id,reward_status')
+    .eq('referred_customer_id', order.customerId).maybeSingle();
+  if (error || !referralUse || referralUse.reward_status !== 'pending') return;
+  const { error: rewardError } = await supabase.rpc('campora_wallet_apply_entry', {
+    p_customer_id: referralUse.referrer_id, p_entry_type: 'referral_reward', p_amount: 100,
+    p_reference_key: order.id, p_description: `₹100 CAMPORA Cash referral reward for completed order ${order.id}`,
+  });
+  if (rewardError) {
+    console.error('Referral reward could not be credited:', rewardError.message);
+    return;
+  }
+  const { error: updateError } = await supabase.from('campora_referral_uses').update({
+    qualifying_order_id: order.id, reward_status: 'credited', credited_at: new Date().toISOString(),
+  }).eq('referred_customer_id', order.customerId).eq('reward_status', 'pending');
+  if (updateError) console.error('Referral reward status could not be updated:', updateError.message);
+}
+
 // Customer profile & stats
 
 app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Response) => {
@@ -2493,6 +2527,9 @@ app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, require
 
   if (updatedOrder.paymentStatus === 'paid' && updatedOrder.status === 'completed') {
     void sendDeliveryEmail(updatedOrder.customerEmail, updatedOrder.customerName, updatedOrder.id);
+  }
+  if (updatedOrder.paymentStatus === 'paid' && updatedOrder.status === 'completed') {
+    await creditReferralForCompletedOrder(updatedOrder);
   }
   res.json({
     success: true,
