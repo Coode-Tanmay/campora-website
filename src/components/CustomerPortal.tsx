@@ -22,6 +22,8 @@ import {
   Check,
   FileCheck,
   Upload,
+  ShoppingBag,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { CamporaOrder, TimelineStep } from '../types';
@@ -45,7 +47,7 @@ interface CustomerPortalProps {
 
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, onNewOrder }) => {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'orders' | 'files' | 'payments' | 'profile' | 'referrals'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'cart' | 'files' | 'payments' | 'profile' | 'referrals'>('orders');
   const [orders, setOrders] = useState<CamporaOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +56,66 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [razorpayEnabled, setRazorpayEnabled] = useState(false);
   const [startingPaymentFor, setStartingPaymentFor] = useState<string | null>(null);
+  const [cartItems, setCartItems] = useState<CamporaOrder[]>([]);
+  const [wallet, setWallet] = useState<{ balance: number; referralCode: string; referralUsage: number; referralLimit: number; successfulReferrals: number; ledger: any[] } | null>(null);
+  const [cashToRedeem, setCashToRedeem] = useState('0');
+  const [combinedCheckout, setCombinedCheckout] = useState<{ id: string; orderIds: string[]; subtotal: number; cashRedeemed: number; amountDue: number; paymentStatus: string } | null>(null);
+  const [combinedUtr, setCombinedUtr] = useState('');
+  const [combinedScreenshot, setCombinedScreenshot] = useState<File | null>(null);
+  const [combinedSubmitting, setCombinedSubmitting] = useState(false);
+  const [cartBusy, setCartBusy] = useState(false);
+
+
+  const fetchCartAndWallet = async () => {
+    try {
+      const [cart, walletData] = await Promise.all([api.getCustomerCart(), api.getWallet()]);
+      setCartItems(cart.items || []);
+      setWallet(walletData);
+    } catch (err) {
+      console.error('Unable to refresh CAMPORA cart or wallet:', err);
+    }
+  };
+
+  const handleRemoveCartItem = async (orderId: string) => {
+    try {
+      await api.removeCartItem(orderId);
+      await fetchCartAndWallet();
+    } catch (err: any) { window.alert(err.message || 'Could not remove this order from your cart.'); }
+  };
+
+  const handleStartCombinedCheckout = async () => {
+    if (cartBusy) return;
+    setCartBusy(true);
+    try {
+      const result = await api.createCombinedCheckout(Number(cashToRedeem || 0));
+      setCombinedCheckout({ ...result.checkout, paymentStatus: 'pending' });
+      setCartItems([]);
+      await fetchCartAndWallet();
+    } catch (err: any) { window.alert(err.message || 'Could not start combined checkout.'); }
+    finally { setCartBusy(false); }
+  };
+
+  const handleSubmitCombinedProof = async () => {
+    if (!combinedCheckout || !combinedScreenshot || combinedSubmitting) return;
+    if (combinedScreenshot.size > 500 * 1024 || !['image/png','image/jpeg'].includes(combinedScreenshot.type)) {
+      window.alert('Please select a PNG or JPG screenshot under 500 KB.');
+      return;
+    }
+    setCombinedSubmitting(true);
+    try {
+      const screenshotUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Could not read the screenshot.'));
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Could not read the screenshot.'));
+        reader.readAsDataURL(combinedScreenshot);
+      });
+      const result = await api.submitCombinedPayment(combinedCheckout.id, { utrNumber: combinedUtr, screenshotUrl, screenshotName: combinedScreenshot.name });
+      setCombinedCheckout({ ...combinedCheckout, paymentStatus: 'verification_pending' });
+      window.alert(result.message);
+      await fetchOrders(false);
+    } catch (err: any) { window.alert(err.message || 'Could not submit combined payment proof.'); }
+    finally { setCombinedSubmitting(false); }
+  };
 
   const fetchOrders = async (showLoading = true) => {
     if (showLoading) {
@@ -72,14 +134,15 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
 
   useEffect(() => {
     fetchOrders();
+    fetchCartAndWallet();
     setRazorpayEnabled(false); // CAMPORA uses direct UPI only to avoid gateway fees.
     // Keep customer order cards and deliverables in sync with admin verification
     // and upload actions without requiring a manual browser refresh.
     const refreshCustomerOrders = () => {
-      if (document.visibilityState === 'visible') void fetchOrders(false);
+      if (document.visibilityState === 'visible') { void fetchOrders(false); void fetchCartAndWallet(); }
     };
     const interval = window.setInterval(refreshCustomerOrders, 10000);
-    const handleFocus = () => { void fetchOrders(false); };
+    const handleFocus = () => { void fetchOrders(false); void fetchCartAndWallet(); };
     window.addEventListener('focus', handleFocus);
     return () => {
       window.clearInterval(interval);
@@ -152,7 +215,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   };
 
   const handleCopyReferral = (code: string) => {
-    navigator.clipboard.writeText(`Use code ${code} for ₹50 off on CAMPORA Academic Services!`);
+    navigator.clipboard.writeText(`Use my CAMPORA referral code: ${code}`);
     setCopiedReferral(true);
     setTimeout(() => setCopiedReferral(false), 2000);
   };
@@ -254,6 +317,14 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
             }`}
           >
             <Package className="w-4 h-4" /> My Orders ({orders.length})
+          </button>
+
+          <button
+            id="tab-my-cart"
+            onClick={() => setActiveTab('cart')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'cart' ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
+          >
+            <ShoppingBag className="w-4 h-4" /> Cart ({cartItems.length})
           </button>
 
           <button
@@ -446,6 +517,89 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
           </div>
         )}
 
+        {/* ================= TABS: CART & COMBINED CHECKOUT ================= */}
+        {activeTab === 'cart' && (
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-[#121215] border border-amber-500/20 p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Your CAMPORA Cart</h2>
+                  <p className="text-xs text-zinc-400 mt-1">Add multiple orders and pay once. Custom quote orders become payable when CAMPORA sets their final price.</p>
+                </div>
+                <div className="rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-3">
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-500">CAMPORA Cash</div>
+                  <div className="text-xl font-bold text-amber-400">₹{(wallet?.balance || 0).toFixed(2)}</div>
+                </div>
+              </div>
+              {combinedCheckout ? (
+                <div className="p-4 rounded-xl bg-zinc-900 border border-amber-500/30 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-bold text-white">Combined Checkout · {combinedCheckout.id}</h3>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full ${combinedCheckout.paymentStatus === 'verification_pending' ? 'bg-blue-500/10 text-blue-300' : 'bg-amber-500/10 text-amber-300'}`}>{combinedCheckout.paymentStatus.replace(/_/g,' ')}</span>
+                  </div>
+                  <p className="text-xs text-zinc-400">Orders included: {combinedCheckout.orderIds.join(', ')}</p>
+                  <div className="text-xs space-y-1 border-t border-zinc-800 pt-3">
+                    <div className="flex justify-between"><span className="text-zinc-400">Order total</span><span>₹{combinedCheckout.subtotal.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">CAMPORA Cash</span><span className="text-amber-300">−₹{combinedCheckout.cashRedeemed.toFixed(2)}</span></div>
+                    <div className="flex justify-between font-bold text-white text-sm"><span>Pay by UPI</span><span>₹{combinedCheckout.amountDue.toFixed(2)}</span></div>
+                  </div>
+                  {combinedCheckout.paymentStatus === 'pending' ? (
+                    <div className="space-y-3 border-t border-zinc-800 pt-3">
+                      <p className="text-xs text-zinc-300">Pay ₹{combinedCheckout.amountDue.toFixed(2)} using the CAMPORA UPI QR, then submit one screenshot for this checkout.</p>
+                      <div><label className="block text-[11px] text-zinc-400 mb-1">UTR / Transaction ID (optional)</label><input value={combinedUtr} onChange={(e) => setCombinedUtr(e.target.value)} className="w-full rounded-lg bg-black border border-zinc-700 px-3 py-2 text-xs text-white" placeholder="Enter UTR number" /></div>
+                      <div><label className="block text-[11px] text-zinc-400 mb-1">Payment screenshot (required, PNG/JPG, max 500 KB)</label><input type="file" accept="image/png,image/jpeg" onChange={(e) => setCombinedScreenshot(e.target.files?.[0] || null)} className="block w-full text-xs text-zinc-300" /></div>
+                      <button onClick={handleSubmitCombinedProof} disabled={!combinedScreenshot || combinedSubmitting} className="px-4 py-2.5 rounded-lg bg-amber-500 disabled:opacity-50 text-black text-xs font-bold">{combinedSubmitting ? 'Submitting…' : 'Submit Combined Payment Proof'}</button>
+                    </div>
+                  ) : <p className="text-xs text-blue-300">Payment proof submitted. Admin will verify the full combined payment manually. Your orders remain individually trackable.</p>}
+                </div>
+              ) : cartItems.length === 0 ? (
+                <div className="p-10 text-center border border-dashed border-zinc-800 rounded-xl">
+                  <ShoppingBag className="w-9 h-9 text-zinc-600 mx-auto mb-2" />
+                  <p className="text-sm font-semibold text-white">Your cart is empty</p>
+                  <p className="text-xs text-zinc-500 mt-1">Place a new order to add it here. You can add multiple orders before checkout.</p>
+                  <button onClick={onNewOrder} className="mt-4 px-4 py-2 rounded-lg bg-amber-500 text-black text-xs font-bold">Add an Order</button>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {cartItems.map((item) => {
+                      const quoteWaiting = item.paymentStatus === 'awaiting_quote' || item.quoteStatus === 'pending' || item.status === 'requirements_review';
+                      return <div key={item.id} className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap"><span className="font-mono text-[10px] text-amber-400">{item.id}</span><span className="text-xs font-bold text-white">{item.serviceName}</span></div>
+                          <p className="text-[11px] text-zinc-400 mt-1">{item.topic} · {item.pagesOrSlides} pages/slides</p>
+                          <p className="text-[11px] mt-1">{quoteWaiting ? <span className="text-amber-300">Waiting for admin quote — not payable yet</span> : <span className="text-emerald-300">Ready for checkout</span>}</p>
+                        </div>
+                        <div className="flex items-center gap-3"><span className="text-sm font-bold text-white">{quoteWaiting ? 'Quote pending' : `₹${Number(item.finalPrice ?? item.total).toFixed(2)}`}</span><button onClick={() => handleRemoveCartItem(item.id)} className="text-xs text-red-300 hover:text-red-200">Remove</button></div>
+                      </div>;
+                    })}
+                  </div>
+                  {(() => {
+                    const ready = cartItems.filter((item) => item.paymentStatus !== 'awaiting_quote' && item.quoteStatus !== 'pending' && item.status !== 'requirements_review');
+                    const total = ready.reduce((sum, item) => sum + Number(item.finalPrice ?? item.total), 0);
+                    const hasCoupon = ready.some((item) => Boolean(item.couponCode || item.discount > 0));
+                    const maxCash = Math.floor(Math.min(wallet?.balance || 0, total * 0.5) * 100) / 100;
+                    return <div className="mt-5 p-4 rounded-xl bg-black/40 border border-zinc-800 space-y-3">
+                      <div className="flex justify-between text-xs"><span className="text-zinc-400">Eligible orders total</span><span className="font-bold text-white">₹{total.toFixed(2)}</span></div>
+                      {hasCoupon && <p className="text-[11px] text-amber-300">A coupon discount is already applied to one or more orders. CAMPORA Cash cannot be combined with coupon discounts.</p>}
+                      <div className="border-t border-zinc-800 pt-3">
+                        <div className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold text-white">Discount code</div><div className="text-[10px] text-zinc-500">Existing order discounts are included above</div></div><span className="text-xs text-zinc-400">{hasCoupon ? 'Applied' : 'None'}</span></div>
+                        <div className="flex items-center justify-between gap-3 mt-3">
+                          <div><div className="text-xs font-bold text-white flex items-center gap-1"><Wallet className="w-3.5 h-3.5 text-amber-400" /> Use CAMPORA Cash</div><div className="text-[10px] text-zinc-500">Balance ₹{(wallet?.balance || 0).toFixed(2)} · Max 50% (up to ₹{maxCash.toFixed(2)})</div></div>
+                          <input aria-label="CAMPORA Cash to redeem" type="number" min="0" max={maxCash} step="0.01" disabled={hasCoupon || maxCash <= 0} value={hasCoupon ? '0' : cashToRedeem} onChange={(e) => setCashToRedeem(e.target.value)} className="w-28 rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-2 text-xs text-white disabled:opacity-40" />
+                        </div>
+                      </div>
+                      <div className="flex justify-between border-t border-zinc-800 pt-3 text-sm font-bold"><span>Payable by UPI</span><span className="text-amber-300">₹{Math.max(0,total-(hasCoupon?0:Number(cashToRedeem||0))).toFixed(2)}</span></div>
+                      <button onClick={handleStartCombinedCheckout} disabled={cartBusy || ready.length !== cartItems.length || ready.length === 0 || Number(cashToRedeem || 0) > maxCash || Number(cashToRedeem || 0) < 0} className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black text-xs font-bold">{cartBusy ? 'Preparing checkout…' : ready.length !== cartItems.length ? 'Waiting for all custom quotes' : 'Proceed to Combined Checkout'}</button>
+                      <p className="text-[10px] text-zinc-500">CAMPORA Cash is reserved only when the admin verifies the combined payment. It is never withdrawn at checkout creation.</p>
+                    </div>;
+                  })()}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ================= TABS: FILES & DELIVERABLES ================= */}
         {activeTab === 'files' && (
           <div className="space-y-4">
@@ -562,45 +716,16 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
           </div>
         )}
 
-        {/* ================= TABS: REFERRALS ================= */}
+        {/* ================= TABS: REFERRALS & CAMPORA CASH ================= */}
         {activeTab === 'referrals' && (
-          <div className="max-w-2xl mx-auto p-6 sm:p-8 rounded-2xl bg-[#121215] border border-amber-500/20 text-center shadow-xl">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4">
-              <Gift className="w-6 h-6" />
+          <div className="max-w-3xl mx-auto space-y-4">
+            <div className="p-6 sm:p-8 rounded-2xl bg-[#121215] border border-amber-500/20 shadow-xl">
+              <div className="flex items-center gap-3 mb-4"><div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center"><Gift className="w-6 h-6" /></div><div><h2 className="text-xl font-bold text-white">CAMPORA Cash & Referrals</h2><p className="text-xs text-zinc-400">Earn ₹100 when a referred new customer completes a paid order.</p></div></div>
+              <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-between gap-3"><div><div className="text-[10px] uppercase tracking-wider text-zinc-500">Your personal referral code</div><div className="text-lg font-mono font-bold text-amber-400">{wallet?.referralCode || 'Loading…'}</div><div className="text-[10px] text-zinc-500 mt-1">Uses: {wallet?.referralUsage || 0}/3</div></div><button onClick={() => handleCopyReferral(wallet?.referralCode || '')} disabled={!wallet?.referralCode} className="px-3 py-2 rounded-lg bg-amber-500 text-black text-xs font-bold">{copiedReferral ? 'Copied!' : 'Copy Code'}</button></div>
+              <div className="grid grid-cols-2 gap-3 mt-4"><div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800"><div className="text-xs text-zinc-400">CAMPORA Cash Balance</div><div className="text-2xl font-bold text-amber-400 mt-1">₹{(wallet?.balance || 0).toFixed(2)}</div></div><div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800"><div className="text-xs text-zinc-400">Successful Referrals</div><div className="text-2xl font-bold text-white mt-1">{wallet?.successfulReferrals || 0}</div></div></div>
+              <p className="text-[11px] text-zinc-500 mt-4">Each code can be used by up to 3 newly registered customers. Your ₹100 reward is credited only after their payment is verified and their order is completed. CAMPORA Cash does not expire, cannot be transferred or withdrawn, and can cover up to 50% of a future order. It cannot be combined with coupon discounts.</p>
             </div>
-            <h2 className="text-xl font-bold text-white mb-1">Campus Ambassador Referral Program</h2>
-            <p className="text-xs text-zinc-400 mb-6">
-              Share your unique referral code with classmates. They get ₹50 off their first order, and you earn ₹100 instant CAMPORA academic credit!
-            </p>
-
-            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-between gap-3 mb-6">
-              <div className="text-left">
-                <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Your Referral Code</div>
-                <div className="text-base font-mono font-bold text-amber-400">
-                  CAMPORA-{user?.name?.split(' ')[0].toUpperCase() || 'STUDENT'}20
-                </div>
-              </div>
-
-              <button
-                id="btn-copy-referral"
-                onClick={() => handleCopyReferral(`CAMPORA-${user?.name?.split(' ')[0].toUpperCase() || 'STUDENT'}20`)}
-                className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs flex items-center gap-1.5 transition-colors"
-              >
-                {copiedReferral ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedReferral ? 'Copied!' : 'Copy Code'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-left">
-              <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80">
-                <div className="text-xs text-zinc-400">Credit Balance</div>
-                <div className="text-xl font-bold text-amber-400 mt-1">₹100.00</div>
-              </div>
-              <div className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80">
-                <div className="text-xs text-zinc-400">Classmates Referred</div>
-                <div className="text-xl font-bold text-white mt-1">2 Students</div>
-              </div>
-            </div>
+            <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800"><h3 className="text-sm font-bold text-white mb-3">Wallet History</h3>{!wallet?.ledger?.length ? <p className="text-xs text-zinc-500">No wallet transactions yet.</p> : <div className="space-y-2">{wallet.ledger.map((entry:any) => <div key={entry.id} className="flex items-center justify-between gap-3 border-b border-zinc-800/70 pb-2 text-xs"><div><div className="text-zinc-200">{entry.description}</div><div className="text-[10px] text-zinc-500">{new Date(entry.created_at).toLocaleString()}</div></div><span className={`font-bold ${Number(entry.amount) >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{Number(entry.amount) >= 0 ? '+' : ''}₹{Number(entry.amount).toFixed(2)}</span></div>)}</div>}</div>
           </div>
         )}
 
