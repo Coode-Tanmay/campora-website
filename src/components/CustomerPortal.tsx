@@ -28,7 +28,6 @@ import { CamporaOrder, TimelineStep } from '../types';
 import { api } from '../services/api';
 import { ManualPaymentSection } from './ManualPaymentSection';
 import { CustomerNotificationCenter } from './CustomerNotificationCenter';
-import { OrderSupportChat } from './OrderSupportChat';
 
 const loadRazorpayCheckout = (): Promise<boolean> => new Promise((resolve) => {
   if ((window as any).Razorpay) { resolve(true); return; }
@@ -726,7 +725,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                 <span className="font-bold text-zinc-200">Cancellation Reason:</span> {selectedOrder.cancellationReason}
               </div>
             )}
-            <OrderSupportChat orderId={selectedOrder.id} />
           </div>
         </div>
       )}
