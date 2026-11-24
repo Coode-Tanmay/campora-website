@@ -2370,24 +2370,28 @@ app.patch('/api/admin/orders/:id/quote', requireAdmin, async (req: RequestWithUs
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === req.params.id.toLowerCase());
   if (orderIndex === -1) { res.status(404).json({ error: 'Order not found.' }); return; }
   const order = ordersStore[orderIndex];
-  const amount = Number(req.body?.amount);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000 || Math.round(amount * 100) !== amount * 100) {
+  const baseAmount = Number(req.body?.amount);
+  if (!Number.isFinite(baseAmount) || baseAmount <= 0 || baseAmount > 1000000 || Math.round(baseAmount * 100) !== baseAmount * 100) {
     res.status(400).json({ error: 'Enter a valid quote amount greater than ₹0, with up to two decimal places.' }); return;
   }
   if (order.paymentStatus === 'paid' || ['cancelled', 'rejected', 'completed'].includes(order.status)) {
     res.status(409).json({ error: 'A quote cannot be changed after payment or after the order is closed.' }); return;
   }
+  const urgentSurchargePercent = order.urgentSurchargePercent === 30 ? 30 : 0;
+  const amount = Math.round(baseAmount * (1 + urgentSurchargePercent / 100) * 100) / 100;
   const now = new Date().toISOString();
   const updatedOrder: CamporaOrder = {
     ...order,
-    subtotal: amount,
+    subtotal: baseAmount,
+    urgentSurchargePercent,
+    urgentSurchargeAmount: Math.round((amount - baseAmount) * 100) / 100,
     finalPrice: amount,
     total: amount,
     quoteStatus: 'sent',
     paymentStatus: 'pending',
     status: 'quote_sent',
-    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'quote_sent', description: `Final quote of ₹${amount.toFixed(2)} set by CAMPORA Admin. Customer can now pay from My Orders.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
-    timeline: [...(order.timeline || []), { id: `quote-${Date.now()}`, title: 'Custom Quote Ready', description: `CAMPORA has confirmed your final price: ₹${amount.toFixed(2)}. You can now pay from My Orders.`, timestamp: now, status: 'current' }],
+    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'quote_sent', description: `Base quote of ₹${baseAmount.toFixed(2)} set by CAMPORA Admin${urgentSurchargePercent ? `; approved ${urgentSurchargePercent}% urgent surcharge applied` : ''}. Final customer price: ₹${amount.toFixed(2)}.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
+    timeline: [...(order.timeline || []), { id: `quote-${Date.now()}`, title: 'Custom Quote Ready', description: `CAMPORA has confirmed your final price: ₹${amount.toFixed(2)}${urgentSurchargePercent ? ` (includes ${urgentSurchargePercent}% urgent surcharge)` : ''}. You can now pay from My Orders.`, timestamp: now, status: 'current' }],
     updatedAt: now,
   };
   ordersStore[orderIndex] = updatedOrder;
