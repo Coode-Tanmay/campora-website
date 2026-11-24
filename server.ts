@@ -1891,6 +1891,198 @@ app.post('/api/customer/orders/:id/payment', paymentProofLimiter, requireAuth, e
   return res.json({ success: true, message: 'Screenshot submitted. Admin verification is pending.', order: toCustomerSafeOrder(hydrated) });
 });
 
+
+/* ================= CAMPORA CART, COMBINED CHECKOUT & WALLET ================= */
+const getCustomerCartItems = async (customerId: string): Promise<string[]> => {
+  const { data, error } = await supabase.from('campora_customer_carts').select('items').eq('customer_id', customerId).maybeSingle();
+  if (error) throw new Error('Unable to load your cart.');
+  return Array.isArray(data?.items) ? data.items.filter((id: unknown): id is string => typeof id === 'string') : [];
+};
+const saveCustomerCartItems = async (customerId: string, items: string[]) => {
+  const { error } = await supabase.from('campora_customer_carts').upsert({ customer_id: customerId, items, updated_at: new Date().toISOString() }, { onConflict: 'customer_id' });
+  if (error) throw new Error('Unable to save your cart.');
+};
+const ensureCustomerWalletAndReferral = async (customerId: string) => {
+  const { error: walletError } = await supabase.from('campora_wallets').upsert({ customer_id: customerId }, { onConflict: 'customer_id', ignoreDuplicates: true });
+  if (walletError) throw new Error('Unable to initialize CAMPORA Cash.');
+  const { data: existing } = await supabase.from('campora_referral_codes').select('code,usage_count,max_usage').eq('referrer_id', customerId).maybeSingle();
+  if (existing) return existing;
+  const customer = usersStore.find((item) => item.id === customerId);
+  const prefix = (customer?.name || 'STUDENT').replace(/[^a-z0-9]/gi, '').slice(0, 7).toUpperCase() || 'STUDENT';
+  let code = '';
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    code = `CMP${prefix}${randomBytes(2).toString('hex').toUpperCase()}`;
+    const { error } = await supabase.from('campora_referral_codes').insert({ code, referrer_id: customerId });
+    if (!error) break;
+    code = '';
+  }
+  if (!code) throw new Error('Unable to create your referral code. Please retry.');
+  return { code, usage_count: 0, max_usage: 3 };
+};
+
+app.get('/api/customer/cart', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const ids = await getCustomerCartItems(req.user!.id);
+  const items = await Promise.all(ids.map(async (id) => {
+    const order = ordersStore.find((item) => item.id === id && item.customerId === req.user!.id);
+    return order ? toCustomerSafeOrder(await hydrateOrderForResponse(order)) : null;
+  }));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ items: items.filter(Boolean) });
+});
+app.post('/api/customer/cart/items/:orderId', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const order = ordersStore.find((item) => item.id === req.params.orderId && item.customerId === req.user!.id);
+  if (!order) return res.status(404).json({ error: 'Order not found.' });
+  if (order.paymentStatus === 'paid' || ['cancelled','completed','rejected'].includes(order.status)) return res.status(409).json({ error: 'This order cannot be added to the cart.' });
+  const ids = await getCustomerCartItems(req.user!.id);
+  if (!ids.includes(order.id)) {
+    if (ids.length >= 20) return res.status(409).json({ error: 'Your cart can contain up to 20 orders.' });
+    ids.push(order.id);
+    await saveCustomerCartItems(req.user!.id, ids);
+  }
+  res.status(200).json({ success: true, items: ids });
+});
+app.delete('/api/customer/cart/items/:orderId', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const ids = (await getCustomerCartItems(req.user!.id)).filter((id) => id !== req.params.orderId);
+  await saveCustomerCartItems(req.user!.id, ids);
+  res.json({ success: true, items: ids });
+});
+app.get('/api/customer/wallet', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const referral = await ensureCustomerWalletAndReferral(req.user!.id);
+  const [{ data: wallet, error: walletError }, { data: ledger, error: ledgerError }, { data: uses, error: usesError }] = await Promise.all([
+    supabase.from('campora_wallets').select('balance').eq('customer_id', req.user!.id).maybeSingle(),
+    supabase.from('campora_wallet_ledger').select('id,entry_type,amount,reference_key,description,created_at').eq('customer_id', req.user!.id).order('created_at', { ascending: false }).limit(50),
+    supabase.from('campora_referral_uses').select('referred_customer_id,reward_status,credited_at').eq('referrer_id', req.user!.id),
+  ]);
+  if (walletError || ledgerError || usesError) return res.status(503).json({ error: 'Wallet details are temporarily unavailable.' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ balance: Number(wallet?.balance || 0), referralCode: referral.code, referralUsage: referral.usage_count, referralLimit: 3, successfulReferrals: (uses || []).filter((item: any) => item.reward_status === 'credited').length, ledger: ledger || [] });
+});
+app.post('/api/customer/cart/checkout', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const ids = await getCustomerCartItems(req.user!.id);
+  if (!ids.length) return res.status(400).json({ error: 'Your cart is empty.' });
+  const selected = ids.map((id) => ordersStore.find((order) => order.id === id && order.customerId === req.user!.id)).filter(Boolean) as CamporaOrder[];
+  if (selected.length !== ids.length) return res.status(409).json({ error: 'One or more cart items are no longer available. Refresh your cart.' });
+  const blocked = selected.find((order) => order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review' || order.quoteStatus === 'pending' || (order.requiresReview && order.quoteStatus !== 'sent' && order.quoteStatus !== 'accepted'));
+  if (blocked) return res.status(409).json({ error: `Order ${blocked.id} is waiting for CAMPORA to confirm its quote. You can check out after the quote is ready.` });
+  if (selected.some((order) => order.paymentStatus === 'paid' || order.paymentStatus === 'verification_pending' || ['cancelled','completed','rejected'].includes(order.status))) return res.status(409).json({ error: 'Remove paid, submitted, or closed orders from your cart before checkout.' });
+  const subtotal = selected.reduce((sum, order) => sum + Number(order.finalPrice ?? order.total), 0);
+  const cashRequested = Number(req.body?.cashToRedeem || 0);
+  if (!Number.isFinite(cashRequested) || cashRequested < 0 || Math.round(cashRequested * 100) !== cashRequested * 100) return res.status(400).json({ error: 'Invalid CAMPORA Cash amount.' });
+  if (cashRequested > 0 && selected.some((order) => Boolean(order.couponCode || order.discount > 0))) return res.status(409).json({ error: 'CAMPORA Cash cannot be combined with coupon or referral discounts. Remove coupon discounts or set CAMPORA Cash to ₹0.' });
+  const [{ data: wallet }, { data: activeBatch }] = await Promise.all([
+    supabase.from('campora_wallets').select('balance').eq('customer_id', req.user!.id).maybeSingle(),
+    supabase.from('campora_checkout_batches').select('id').eq('customer_id', req.user!.id).in('payment_status', ['pending','verification_pending']).limit(1).maybeSingle(),
+  ]);
+  if (activeBatch) return res.status(409).json({ error: 'You already have an active combined checkout. Complete or contact CAMPORA about that checkout first.' });
+  const balance = Number(wallet?.balance || 0);
+  const maxCash = Math.floor(Math.min(balance, subtotal * 0.5) * 100) / 100;
+  if (cashRequested > maxCash) return res.status(400).json({ error: `You can use up to ₹${maxCash.toFixed(2)} CAMPORA Cash on this checkout.` });
+  const amountDue = Math.round((subtotal - cashRequested) * 100) / 100;
+  if (amountDue <= 0) return res.status(400).json({ error: 'At least some amount must be paid through UPI.' });
+  const batchId = `CMPB-${randomBytes(5).toString('hex').toUpperCase()}`;
+  const { error } = await supabase.from('campora_checkout_batches').insert({
+    id: batchId, customer_id: req.user!.id, order_ids: selected.map((order) => order.id),
+    subtotal, cash_redeemed: cashRequested, amount_due: amountDue, payment_status: 'pending',
+  });
+  if (error) return res.status(503).json({ error: 'Unable to start combined checkout. Please try again.' });
+  await saveCustomerCartItems(req.user!.id, []);
+  res.status(201).json({ success: true, checkout: { id: batchId, orderIds: selected.map((order) => order.id), subtotal, cashRedeemed: cashRequested, amountDue } });
+});
+app.post('/api/customer/cart/checkout/:id/payment', paymentProofLimiter, requireAuth, express.json({ limit: '1mb' }), async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const { data: batch, error } = await supabase.from('campora_checkout_batches').select('*').eq('id', req.params.id).eq('customer_id', req.user!.id).maybeSingle();
+  if (error || !batch) return res.status(404).json({ error: 'Combined checkout not found.' });
+  if (batch.payment_status !== 'pending') return res.status(409).json({ error: 'This checkout is no longer awaiting payment proof.' });
+  const cleanUtr = typeof req.body?.utrNumber === 'string' ? req.body.utrNumber.trim().replace(/\\s+/g, '') : '';
+  if (cleanUtr && !/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) return res.status(400).json({ error: 'UTR must be 8–32 letters, numbers or hyphens, or left blank.' });
+  let screenshotPath = '';
+  try {
+    const parsed = parsePrivateUpload(req.body?.screenshotUrl, typeof req.body?.screenshotName === 'string' ? req.body.screenshotName : 'Combined_Payment.png');
+    if (!['image/png','image/jpeg'].includes(parsed.mimeType) || parsed.buffer.length > 500 * 1024) throw new Error('Payment screenshot must be a PNG or JPG image under 500 KB.');
+    screenshotPath = await uploadPrivateFile(batch.id, 'combined-payment-proof', typeof req.body?.screenshotName === 'string' ? req.body.screenshotName : 'Combined_Payment.png', parsed);
+  } catch (uploadError) { return res.status(400).json({ error: uploadError instanceof Error ? uploadError.message : 'Payment screenshot upload failed.' }); }
+  const { error: updateError } = await supabase.from('campora_checkout_batches').update({
+    payment_status: 'verification_pending', utr_number: cleanUtr || null, screenshot_path: screenshotPath,
+    screenshot_name: typeof req.body?.screenshotName === 'string' ? req.body.screenshotName.slice(0,180) : 'Combined_Payment.png',
+    submitted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).eq('id', batch.id).eq('payment_status', 'pending');
+  if (updateError) { await removePrivateFiles([screenshotPath]); return res.status(503).json({ error: 'Payment proof could not be saved. Please try again.' }); }
+  res.json({ success: true, message: 'Combined payment proof submitted. CAMPORA Admin will verify the payment manually.' });
+});
+
+app.get('/api/admin/checkout-batches', requireAdmin, async (_req: RequestWithUser, res: Response) => {
+  const { data, error } = await supabase.from('campora_checkout_batches').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(503).json({ error: 'Unable to load combined checkouts.' });
+  const batches = (data || []).map((batch: any) => ({
+    id: batch.id, customerId: batch.customer_id, orderIds: batch.order_ids, subtotal: Number(batch.subtotal),
+    cashRedeemed: Number(batch.cash_redeemed), amountDue: Number(batch.amount_due), paymentStatus: batch.payment_status,
+    utrNumber: batch.utr_number, screenshotName: batch.screenshot_name, submittedAt: batch.submitted_at,
+    screenshotUrl: batch.screenshot_path ? `/api/admin/checkout-batches/${encodeURIComponent(batch.id)}/proof` : undefined,
+    customer: usersStore.find((user) => user.id === batch.customer_id)?.name || 'Customer',
+    orders: (batch.order_ids || []).map((id: string) => ordersStore.find((order) => order.id === id)).filter(Boolean),
+  }));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ batches });
+});
+app.get('/api/admin/checkout-batches/:id/proof', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const { data: batch } = await supabase.from('campora_checkout_batches').select('screenshot_path').eq('id', req.params.id).maybeSingle();
+  if (!batch?.screenshot_path) return res.status(404).json({ error: 'Payment proof not found.' });
+  const url = await createPrivateFileUrl(batch.screenshot_path);
+  if (!url) return res.status(503).json({ error: 'Payment proof is temporarily unavailable.' });
+  res.redirect(302, url);
+});
+app.patch('/api/admin/checkout-batches/:id/payment', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const action = req.body?.action;
+  const { data: batch, error } = await supabase.from('campora_checkout_batches').select('*').eq('id', req.params.id).maybeSingle();
+  if (error || !batch) return res.status(404).json({ error: 'Combined checkout not found.' });
+  if (action === 'reject') {
+    const reason = typeof req.body?.rejectionReason === 'string' ? req.body.rejectionReason.trim().slice(0,500) : '';
+    if (!reason || batch.payment_status !== 'verification_pending') return res.status(409).json({ error: 'A submitted payment proof and rejection reason are required.' });
+    const { error: updateError } = await supabase.from('campora_checkout_batches').update({ payment_status: 'rejected', updated_at: new Date().toISOString() }).eq('id', batch.id).eq('payment_status', 'verification_pending');
+    if (updateError) return res.status(503).json({ error: 'Unable to reject payment proof.' });
+    return res.json({ success: true, message: 'Combined payment proof rejected. Customer can contact CAMPORA for next steps.' });
+  }
+  if (action !== 'confirm' || batch.payment_status !== 'verification_pending') return res.status(409).json({ error: 'This checkout is not awaiting payment verification.' });
+  const batchOrders = (batch.order_ids || []).map((id: string) => ordersStore.find((order) => order.id === id && order.customerId === batch.customer_id));
+  if (batchOrders.some((order: CamporaOrder | undefined) => !order || order.paymentStatus === 'paid' || ['cancelled','completed','rejected'].includes(order.status))) return res.status(409).json({ error: 'At least one order in this checkout is no longer payable. Review the batch and contact the customer before confirming.' });
+  const debit = Number(batch.cash_redeemed || 0);
+  if (debit > 0) {
+    const { data: walletResult, error: walletError } = await supabase.rpc('campora_wallet_apply_entry', {
+      p_customer_id: batch.customer_id, p_entry_type: 'checkout_redemption', p_amount: -debit,
+      p_reference_key: batch.id, p_description: `CAMPORA Cash redeemed on combined checkout ${batch.id}`,
+    });
+    if (walletError) return res.status(409).json({ error: walletError.message.includes('Insufficient') ? 'The customer wallet balance is no longer sufficient. Do not confirm until reviewed.' : 'Wallet redemption could not be processed.' });
+    if (Array.isArray(walletResult) && walletResult[0]?.applied === false) return res.status(409).json({ error: 'CAMPORA Cash for this checkout was already processed.' });
+  }
+  const now = new Date().toISOString();
+  const originals = batchOrders as CamporaOrder[];
+  const updated = originals.map((order) => ({
+    ...order, paymentStatus: 'paid' as const,
+    paymentDetails: { ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }), upiId: 'tanmayvbhagat-1@oksbi', amountPaid: Number(order.finalPrice ?? order.total), utrNumber: batch.utr_number || undefined, screenshotName: batch.screenshot_name || undefined, verifiedAt: now, verifiedBy: req.user?.name || 'CAMPORA Admin' },
+    activityHistory: [...(order.activityHistory || []), { id: `act-${randomBytes(4).toString('hex')}`, action: 'combined_payment_verified', description: `Combined payment ${batch.id} verified by CAMPORA Admin.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
+    timeline: (order.timeline || []).map((step) => step.id === 't3' || step.title.toLowerCase().includes('payment') ? { ...step, title: 'Payment Confirmed', description: `Payment verified as part of combined checkout ${batch.id}.`, status: 'completed' as const, timestamp: now } : step),
+    updatedAt: now,
+  }));
+  const oldOrders = ordersStore;
+  const updateById = new Map(updated.map((order) => [order.id, order]));
+  ordersStore = ordersStore.map((order) => updateById.get(order.id) || order);
+  try { await persistState(); } catch (persistError) {
+    ordersStore = oldOrders;
+    if (debit > 0) await supabase.rpc('campora_wallet_apply_entry', { p_customer_id: batch.customer_id, p_entry_type: 'admin_adjustment', p_amount: debit, p_reference_key: `${batch.id}:rollback`, p_description: `Rollback of failed combined checkout ${batch.id}` });
+    throw persistError;
+  }
+  const { error: batchUpdateError } = await supabase.from('campora_checkout_batches').update({ payment_status: 'paid', verified_at: now, verified_by: req.user?.name || 'CAMPORA Admin', updated_at: now }).eq('id', batch.id).eq('payment_status', 'verification_pending');
+  if (batchUpdateError) return res.status(503).json({ error: 'Orders were updated but checkout receipt status needs admin review. Please inspect this batch before retrying.' });
+  for (const order of updated) void sendPaymentUpdateEmail(order.customerEmail, order.customerName, order.id, 'confirmed');
+  res.json({ success: true, message: `Combined payment verified. ${updated.length} orders are now paid.`, orders: await Promise.all(updated.map(hydrateOrderForResponse)) });
+});
+
+
 // Customer profile & stats
 
 app.get('/api/customer/profile', requireAuth, (req: RequestWithUser, res: Response) => {
