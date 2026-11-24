@@ -381,6 +381,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
         })),
       );
       const savedOrder = await onOrderCreated(newOrder, uploadFiles);
+      await api.addCartItem(savedOrder.id);
       if (requiresAdminReview && quoteWhatsAppWindow) {
         const quoteMessage = [
           'Hi CAMPORA Team! I have just submitted a custom quote request on your website.',
@@ -510,12 +511,12 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                 #{createdOrderSummary.id}
               </span>
               <h3 className="text-2xl sm:text-3xl font-extrabold text-white font-['Outfit',sans-serif]">
-                {createdOrderSummary.requiresReview ? 'Order Brief Submitted for Review!' : 'Order Submitted Successfully! 🎉'}
+                {createdOrderSummary.requiresReview ? 'Quote Request Added to Cart!' : 'Order Added to Cart! 🎉'}
               </h3>
               <p className="text-sm text-[#B8B8B8] max-w-lg mx-auto mt-2">
                 {createdOrderSummary.requiresReview
-                  ? 'Your request has been saved. Our admin will review it and contact you manually on WhatsApp with the final price.'
-                  : 'Your order has been securely recorded. Scan the UPI QR, upload your payment screenshot, and optionally enter your UTR for admin verification.'}
+                  ? 'Your request has been saved in your cart. Our admin will review it and contact you manually on WhatsApp with the final price. Once the quote is set, it will become payable in your combined cart checkout.'
+                  : 'Your order has been saved in your cart. Add more orders, wait for any custom quotes, then pay for eligible orders together in one UPI checkout.'}
               </p>
             </div>
 
@@ -549,35 +550,9 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                 <h4 className="font-bold text-red-300">Order Cancelled</h4>
                 <p className="text-xs text-[#B8B8B8]">Your order has been cancelled successfully. It will appear as cancelled in your order history.</p>
               </div>
-            ) : !createdOrderSummary.requiresReview && paymentMethod === 'upi' && createdOrderSummary.finalPrice > 0 && (
-              <div className="max-w-2xl mx-auto w-full text-left">
-                {paymentProofSubmitted ? (
-                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-2">
-                    <CheckCircle2 className="w-8 h-8 text-amber-400 mx-auto" />
-                    <h4 className="font-bold text-amber-300">Payment verification pending</h4>
-                    <p className="text-xs text-[#B8B8B8]">Your payment screenshot has been submitted. UTR is optional. The Live Order Tracker will be available after CAMPORA admin verifies your payment.</p>
-                  </div>
-                ) : (
-                  <>
-                    <h4 className="text-lg font-bold text-white mb-3 text-center">Complete Your UPI Payment</h4>
-                    <ManualPaymentSection
-                      order={createdOrderSummary}
-                      onPaymentSubmitted={async (utr, screenshot, screenshotName) => {
-                        const result = await api.submitPaymentProof(createdOrderSummary.id, {
-                          utrNumber: utr,
-                          screenshotUrl: screenshot,
-                          screenshotName,
-                        });
-                        setCreatedOrderSummary(result.order);
-                        setPaymentProofSubmitted(true);
-                      }}
-                    />
-                  </>
-                )}
-              </div>
-            )}
+            ) : null}
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+
               {!createdOrderSummary.requiresReview && !paymentProofSubmitted && !orderCancelled && (
                 <button
                   type="button"
@@ -586,7 +561,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   disabled={isCancellingOrder}
                   className="w-full sm:w-auto px-6 py-3.5 rounded-full border border-red-500/40 text-red-300 hover:bg-red-500/10 text-xs font-bold transition-all disabled:opacity-50"
                 >
-                  {isCancellingOrder ? 'Cancelling Order…' : 'Cancel Payment & Order'}
+                  {isCancellingOrder ? 'Cancelling Order…' : 'Cancel Order'}
                 </button>
               )}
               {(createdOrderSummary.requiresReview || orderCancelled) ? (
@@ -595,7 +570,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   onClick={handleFinishAndClose}
                   className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
                 >
-                  {orderCancelled ? 'Close' : 'Go to Order Dashboard'}
+                  {orderCancelled ? 'Close' : 'Go to Cart & Dashboard'}
                 </button>
               ) : paymentProofSubmitted ? (
                 <button
@@ -603,7 +578,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   onClick={handleFinishAndClose}
                   className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
                 >
-                  Close — Await Verification
+                  Go to Cart
                 </button>
               ) : null}
             </div>
