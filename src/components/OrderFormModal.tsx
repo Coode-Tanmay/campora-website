@@ -564,23 +564,13 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                   {isCancellingOrder ? 'Cancelling Order…' : 'Cancel Order'}
                 </button>
               )}
-              {(createdOrderSummary.requiresReview || orderCancelled) ? (
-                <button
-                  id="btn-view-tracking-dashboard"
-                  onClick={handleFinishAndClose}
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
-                >
-                  {orderCancelled ? 'Close' : 'Go to Cart & Dashboard'}
-                </button>
-              ) : paymentProofSubmitted ? (
-                <button
-                  type="button"
-                  onClick={handleFinishAndClose}
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
-                >
-                  Go to Cart
-                </button>
-              ) : null}
+              <button
+                id="btn-view-tracking-dashboard"
+                onClick={handleFinishAndClose}
+                className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] text-xs font-bold transition-all shadow-lg shadow-[#D4A72C]/20"
+              >
+                {orderCancelled ? 'Close' : 'Go to Cart & Dashboard'}
+              </button>
             </div>
           </div>
         ) : (
