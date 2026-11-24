@@ -100,7 +100,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [files, setFiles] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
-  const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'cancelled' | 'refund_completed'>('all');
+  const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'completed' | 'cancelled' | 'rejected' | 'refund_completed'>('all');
   const [manageOrdersSort, setManageOrdersSort] = useState<'time_left' | 'date_newest' | 'date_oldest'>('time_left');
   const [searchQuery, setSearchQuery] = useState('');
   const [previewScreenshotUrl, setPreviewScreenshotUrl] = useState<string | null>(null);
@@ -364,7 +364,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     return true;
   });
 
-  // Manage Orders subtabs: each order belongs to a clear operational bucket.
+  // Automatic operational buckets. Terminal outcomes take precedence over active/deadline buckets.
+  const getOrderBucket = (ord: CamporaOrder): 'refund_completed' | 'cancelled' | 'rejected' | 'completed' | 'in_progress' | 'delayed' | 'live' => {
+    if (ord.refundStatus === 'refunded') return 'refund_completed';
+    if (ord.status === 'cancelled') return 'cancelled';
+    if (ord.status === 'rejected') return 'rejected';
+    if (ord.status === 'completed') return 'completed';
+    if (ord.status === 'in_progress' || ord.status === 'review') return 'in_progress';
+    const createdAt = new Date(ord.createdAt).getTime();
+    const deadlineAt = createdAt + getDeadlineDurationMs(ord.deadline);
+    if (Number.isFinite(createdAt) && Date.now() > deadlineAt) return 'delayed';
+    return 'live';
+  };
+
   const filteredOrders = orders.filter((ord) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
@@ -375,22 +387,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
       ord.college.toLowerCase().includes(query) ||
       ord.topic.toLowerCase().includes(query);
     if (!matchesSearch) return false;
-
-    const isCancelled = ord.status === 'cancelled';
-    const isInProgress = ord.status === 'in_progress' || ord.status === 'review';
-    const isRefundCompleted = ord.refundStatus === 'refunded';
-    const createdAt = new Date(ord.createdAt).getTime();
-    const deadlineAt = createdAt + getDeadlineDurationMs(ord.deadline);
-    const isDelayed = !isCancelled && ord.status !== 'completed' && !isRefundCompleted
-      && Number.isFinite(createdAt) && Date.now() > deadlineAt;
-
-    if (manageOrdersTab === 'all') return true;
-    if (manageOrdersTab === 'cancelled') return isCancelled && !isRefundCompleted;
-    if (manageOrdersTab === 'refund_completed') return isRefundCompleted;
-    if (manageOrdersTab === 'in_progress') return isInProgress && !isCancelled;
-    if (manageOrdersTab === 'delayed') return isDelayed;
-    // Live: active orders that are not in progress, delayed, cancelled, completed or refunded.
-    return !isCancelled && !isInProgress && !isDelayed && ord.status !== 'completed' && !isRefundCompleted;
+    return manageOrdersTab === 'all' || getOrderBucket(ord) === manageOrdersTab;
   });
 
   const sortedFilteredOrders = [...filteredOrders].sort((a, b) => {
@@ -410,20 +407,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
   const manageOrderTabCounts = {
     all: orders.length,
-    live: orders.filter((ord) => {
-      const createdAt = new Date(ord.createdAt).getTime();
-      const delayed = ord.status !== 'cancelled' && ord.status !== 'completed'
-        && Number.isFinite(createdAt) && Date.now() > createdAt + getDeadlineDurationMs(ord.deadline);
-      return !['cancelled', 'completed', 'in_progress', 'review'].includes(ord.status) && !delayed && ord.refundStatus !== 'refunded';
-    }).length,
-    in_progress: orders.filter((ord) => ord.status === 'in_progress' || ord.status === 'review').length,
-    delayed: orders.filter((ord) => {
-      const createdAt = new Date(ord.createdAt).getTime();
-      return !['cancelled', 'completed'].includes(ord.status) && ord.refundStatus !== 'refunded'
-        && Number.isFinite(createdAt) && Date.now() > createdAt + getDeadlineDurationMs(ord.deadline);
-    }).length,
-    cancelled: orders.filter((ord) => ord.status === 'cancelled' && ord.refundStatus !== 'refunded').length,
-    refund_completed: orders.filter((ord) => ord.refundStatus === 'refunded').length,
+    live: orders.filter((ord) => getOrderBucket(ord) === 'live').length,
+    in_progress: orders.filter((ord) => getOrderBucket(ord) === 'in_progress').length,
+    delayed: orders.filter((ord) => getOrderBucket(ord) === 'delayed').length,
+    completed: orders.filter((ord) => getOrderBucket(ord) === 'completed').length,
+    cancelled: orders.filter((ord) => getOrderBucket(ord) === 'cancelled').length,
+    rejected: orders.filter((ord) => getOrderBucket(ord) === 'rejected').length,
+    refund_completed: orders.filter((ord) => getOrderBucket(ord) === 'refund_completed').length,
   };
 
   return (
@@ -683,7 +673,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                     { id: 'live', label: 'Live Orders' },
                     { id: 'in_progress', label: 'In Progress' },
                     { id: 'delayed', label: 'Delayed Orders' },
+                    { id: 'completed', label: 'Completed Orders' },
                     { id: 'cancelled', label: 'Cancelled Orders' },
+                    { id: 'rejected', label: 'Rejected Orders' },
                     { id: 'refund_completed', label: 'Refund Completed' },
                   ] as const).map((tab) => (
                     <button
