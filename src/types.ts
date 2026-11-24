@@ -164,6 +164,8 @@ export interface CamporaOrder {
   refundStatus?: RefundStatus;
   refundRequestedAt?: string;
   camporaCashRedeemed?: number;
+  urgentSurchargePercent?: number;
+  urgentSurchargeAmount?: number;
   refundedAt?: string;
   
   // Status Tracking
