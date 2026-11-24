@@ -114,6 +114,17 @@ export const api = {
     await fetchJson(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
   },
 
+  async getCustomerNotifications(): Promise<{ notifications: Array<{ id: string; orderId: string; title: string; message: string; timestamp: string; read: boolean }> }> {
+    return fetchJson(`${API_BASE}/customer/notifications`);
+  },
+
+  async markCustomerNotificationsRead(ids: string[]): Promise<{ success: boolean }> {
+    return fetchJson(`${API_BASE}/customer/notifications/read`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
   // Customer Orders (Strictly user-scoped)
   async getCustomerOrders(): Promise<{ orders: CamporaOrder[] }> {
     return fetchJson<{ orders: CamporaOrder[] }>(`${API_BASE}/customer/orders`);
