@@ -1951,7 +1951,6 @@ app.post('/api/customer/cart/items/:orderId', requireAuth, async (req: RequestWi
   if (order.paymentStatus === 'paid' || ['cancelled','completed','rejected'].includes(order.status)) return res.status(409).json({ error: 'This order cannot be added to the cart.' });
   const ids = await getCustomerCartItems(req.user!.id);
   if (!ids.includes(order.id)) {
-    if (ids.length >= 20) return res.status(409).json({ error: 'Your cart can contain up to 20 orders.' });
     ids.push(order.id);
     await saveCustomerCartItems(req.user!.id, ids);
   }
