@@ -220,6 +220,7 @@ function AppContent() {
             <WhyUs />
             <ServicesSection
               onSelectService={(serviceId) => handleOpenOrderModal(serviceId)}
+              onSelectCategory={(category) => category === 'website' ? handleNavigateTab('build-website') : undefined}
             />
             <HowItWorks onStartOrder={() => handleOpenOrderModal()} />
             <ReferralBanner
@@ -240,6 +241,7 @@ function AppContent() {
           <div className="pt-4">
             <ServicesSection
               onSelectService={(serviceId) => handleOpenOrderModal(serviceId)}
+              onSelectCategory={(category) => category === 'website' ? handleNavigateTab('build-website') : undefined}
             />
             <CollegeTemplateFeature onOrderWithTemplate={() => handleOpenOrderModal()} />
             <ReferralBanner
