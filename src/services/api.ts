@@ -251,7 +251,7 @@ export const api = {
     });
   },
 
-  async getAdminReferrals(): Promise<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[] }> { return fetchJson(`${API_BASE}/admin/referrals`); },
+  async getAdminReferrals(): Promise<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[]; audit: any[] }> { return fetchJson(`${API_BASE}/admin/referrals`); },
   async adjustCustomerWallet(customerId: string, amount: number, reason: string): Promise<{ success: boolean; balance: number; message: string }> {
     return fetchJson(`${API_BASE}/admin/customers/${encodeURIComponent(customerId)}/wallet`, { method: 'PATCH', body: JSON.stringify({ amount, reason }) });
   },
