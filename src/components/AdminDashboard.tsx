@@ -1471,7 +1471,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                   {customers.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-zinc-500">No customer accounts found.</td></tr>}
                 </tbody>
               </table>
-            </div>            </div>
+            </div>
           </div>
         )}
 
