@@ -1423,7 +1423,7 @@ app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: R
 
   // Filter exclusively for this customer and mint short-lived URLs for private files.
   const userOrders = await Promise.all(ordersStore
-    .filter((o) => o.customerId === user.id && o.status !== 'cancelled')
+    .filter((o) => o.customerId === user.id)
     .map(async (order) => {
       const hydrated = await hydrateOrderForResponse(order);
       return toCustomerSafeOrder(hydrated);
