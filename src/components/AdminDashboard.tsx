@@ -98,6 +98,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [orders, setOrders] = useState<CamporaOrder[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
+  const [checkoutBatches, setCheckoutBatches] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'completed' | 'cancelled' | 'rejected' | 'refund_completed'>('all');
@@ -130,14 +131,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const fetchAdminData = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const [ordersRes, custRes, filesRes] = await Promise.all([
+      const [ordersRes, custRes, filesRes, batchesRes] = await Promise.all([
         api.getAdminOrders(),
         api.getAdminCustomers().catch(() => ({ customers: [] })),
         api.getAdminFiles().catch(() => ({ files: [] })),
+        api.getAdminCheckoutBatches().catch(() => ({ batches: [] })),
       ]);
       setOrders(ordersRes.orders || []);
       setCustomers(custRes.customers || []);
       setFiles(filesRes.files || []);
+      setCheckoutBatches(batchesRes.batches || []);
       if (!selectedOrderId && ordersRes.orders?.length > 0) {
         setSelectedOrderId(ordersRes.orders[0].id);
         setAdminNoteInput(ordersRes.orders[0].adminNotes || '');
@@ -293,6 +296,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     } catch (err: any) {
       triggerToast(err.message || 'Payment rejection failed.');
     }
+  };
+
+  const handleVerifyCombinedPayment = async (batchId: string, action: 'confirm' | 'reject') => {
+    const reason = action === 'reject' ? window.prompt('Enter the reason for rejecting this combined payment proof:') : undefined;
+    if (action === 'reject' && !reason?.trim()) return;
+    try {
+      const result = await api.verifyCombinedPayment(batchId, action, reason);
+      triggerToast(result.message);
+      await fetchAdminData(false);
+    } catch (error: any) { triggerToast(error.message || 'Combined payment update failed.'); }
   };
 
   const handleUploadDeliverable = async (e: React.FormEvent) => {
@@ -1115,6 +1128,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                 <div className="p-12 text-center text-zinc-500 text-xs">Select an order on the left to manage.</div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ================= COMBINED CHECKOUT VERIFICATION ================= */}
+        {activeAdminTab === 'payments' && (
+          <div className="max-w-7xl mx-auto mb-7 p-5 rounded-2xl bg-[#121215] border border-amber-500/25">
+            <div className="flex items-center justify-between gap-3 mb-4"><div><h3 className="text-base font-bold text-white">Combined Checkout Verification</h3><p className="text-[11px] text-zinc-400">One UPI payment can cover multiple independent orders. Verify the full amount before confirming.</p></div><span className="text-[10px] text-amber-300">{checkoutBatches.filter((b) => b.paymentStatus === 'verification_pending').length} awaiting review</span></div>
+            {checkoutBatches.length === 0 ? <p className="text-xs text-zinc-500">No combined checkouts have been created yet.</p> : <div className="space-y-3">{checkoutBatches.map((batch) => <div key={batch.id} className="p-4 rounded-xl bg-zinc-900 border border-zinc-800">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3"><div><div className="flex items-center gap-2 flex-wrap"><span className="font-mono text-xs font-bold text-amber-400">{batch.id}</span><span className="text-xs text-white font-semibold">{batch.customer}</span><span className={`text-[10px] uppercase px-2 py-0.5 rounded-full ${batch.paymentStatus === 'verification_pending' ? 'bg-blue-500/10 text-blue-300' : batch.paymentStatus === 'paid' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-800 text-zinc-400'}`}>{batch.paymentStatus.replace(/_/g,' ')}</span></div><p className="text-[11px] text-zinc-400 mt-1">Orders: {(batch.orderIds || []).join(', ')}</p><p className="text-[11px] text-zinc-400">UTR: {batch.utrNumber || 'Not provided'} · Submitted: {batch.submittedAt ? new Date(batch.submittedAt).toLocaleString() : 'Not submitted'}</p></div>
+                <div className="text-right"><div className="text-[10px] text-zinc-500">UPI amount to verify</div><div className="text-lg font-bold text-white">₹{Number(batch.amountDue).toFixed(2)}</div><div className="text-[10px] text-amber-300">CAMPORA Cash: ₹{Number(batch.cashRedeemed).toFixed(2)}</div></div></div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">{batch.screenshotUrl && <a href={batch.screenshotUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-xs text-white">View payment screenshot</a>}{batch.paymentStatus === 'verification_pending' && <><button onClick={() => handleVerifyCombinedPayment(batch.id,'confirm')} className="px-3 py-1.5 rounded-lg bg-emerald-500 text-black text-xs font-bold">Confirm Full Payment</button><button onClick={() => handleVerifyCombinedPayment(batch.id,'reject')} className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-semibold">Reject Proof</button></>}</div>
+            </div>)}</div>}
           </div>
         )}
 
