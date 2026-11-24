@@ -420,7 +420,10 @@ export const SERVICES_DATA: ServiceItem[] = [
     description: 'Build or improve spreadsheets for tracking, calculations, reporting and visual dashboards.',
     features: ['Formulas and data validation', 'Pivot tables and charts', 'Interactive dashboard layouts', 'Excel workbook handoff'],
   },
-\n];\n\nexport const INITIAL_ORDERS: CamporaOrder[] = [
+
+];
+
+export const INITIAL_ORDERS: CamporaOrder[] = [
   {
     id: 'CMP-1024',
     customerId: 'cust-alex-1',
