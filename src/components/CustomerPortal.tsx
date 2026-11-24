@@ -27,6 +27,7 @@ import { useAuth } from '../context/AuthContext';
 import { CamporaOrder, TimelineStep } from '../types';
 import { api } from '../services/api';
 import { ManualPaymentSection } from './ManualPaymentSection';
+import { CustomerNotificationCenter } from './CustomerNotificationCenter';
 
 const loadRazorpayCheckout = (): Promise<boolean> => new Promise((resolve) => {
   if ((window as any).Razorpay) { resolve(true); return; }
@@ -219,6 +220,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
           </div>
 
           <div className="flex items-center gap-3">
+            <CustomerNotificationCenter onOpenOrder={(orderId) => {
+              setActiveTab('orders');
+              const match = orders.find(order => order.id === orderId);
+              if (match) setSelectedOrder(match);
+            }} />
             <button
               id="btn-portal-new-order"
               onClick={onNewOrder}
