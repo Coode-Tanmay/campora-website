@@ -337,6 +337,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     }
   };
 
+  const handleCompleteRefund = async (order: CamporaOrder) => {
+    if (!window.confirm('Confirm that the actual UPI/bank refund has already been processed to the customer. CAMPORA Cash used on this order will also be restored.')) return;
+    const reason = window.prompt('Enter the refund reference or audit reason:');
+    if (!reason?.trim()) return;
+    try {
+      const result = await api.completeOrderRefund(order.id, reason.trim());
+      setOrders((previous) => previous.map((item) => item.id === order.id ? result.order : item));
+      triggerToast(result.message);
+      await fetchAdminData(false);
+    } catch (error: any) {
+      triggerToast(error.message || 'Refund could not be recorded.');
+    }
+  };
+
   const handleVerifyCombinedPayment = async (batchId: string, action: 'confirm' | 'reject') => {
     const reason = action === 'reject' ? window.prompt('Enter the reason for rejecting this combined payment proof:') : undefined;
     if (action === 'reject' && !reason?.trim()) return;
@@ -1018,6 +1032,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       >
                         <Ban className="w-3.5 h-3.5" /> Cancel Order
                       </button>
+                      {activeOrder.refundStatus === 'requested' || activeOrder.refundStatus === 'processing' ? (
+                        <button
+                          id="btn-admin-complete-refund"
+                          onClick={() => handleCompleteRefund(activeOrder)}
+                          className="px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" /> Confirm Refund Completed
+                        </button>
+                      ) : null}
                     </div>
 
                     {/* Rejection Prompt */}
