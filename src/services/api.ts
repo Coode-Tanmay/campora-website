@@ -251,9 +251,15 @@ export const api = {
     });
   },
 
-  async getAdminReferrals(): Promise<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[] }> { return fetchJson(`${API_BASE}/admin/referrals`); },
+  async getAdminReferrals(): Promise<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[]; audit: any[] }> { return fetchJson(`${API_BASE}/admin/referrals`); },
   async adjustCustomerWallet(customerId: string, amount: number, reason: string): Promise<{ success: boolean; balance: number; message: string }> {
     return fetchJson(`${API_BASE}/admin/customers/${encodeURIComponent(customerId)}/wallet`, { method: 'PATCH', body: JSON.stringify({ amount, reason }) });
+  },
+  async adjustReferralUsage(code: string, newUsageCount: number, reason: string): Promise<{ success: boolean; usageCount: number; message: string }> {
+    return fetchJson(`${API_BASE}/admin/referrals/${encodeURIComponent(code)}/usage`, { method: 'PATCH', body: JSON.stringify({ newUsageCount, reason }) });
+  },
+  async completeOrderRefund(orderId: string, reason: string): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
+    return fetchJson(`${API_BASE}/admin/orders/${encodeURIComponent(orderId)}/refund`, { method: 'PATCH', body: JSON.stringify({ reason }) });
   },
 
   async getAdminCustomers(): Promise<{ customers: any[] }> {

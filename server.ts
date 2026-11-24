@@ -2125,7 +2125,7 @@ app.patch('/api/admin/checkout-batches/:id/payment', requireAdmin, async (req: R
     cashRemaining = Math.max(0, Math.round((cashRemaining - cashShare) * 100) / 100);
     const upiPaidForOrder = Math.max(0, Math.round((gross - cashShare) * 100) / 100);
     return {
-      ...order, paymentStatus: 'paid' as const,
+      ...order, paymentStatus: 'paid' as const, camporaCashRedeemed: cashShare,
       paymentDetails: { ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }), upiId: 'tanmayvbhagat-1@oksbi', amountPaid: upiPaidForOrder, utrNumber: batch.utr_number || undefined, screenshotName: batch.screenshot_name || undefined, verifiedAt: now, verifiedBy: req.user?.name || 'CAMPORA Admin' },
       activityHistory: [...(order.activityHistory || []), { id: `act-${randomBytes(4).toString('hex')}`, action: 'combined_payment_verified', description: `Combined payment ${batch.id} verified. UPI allocated ₹${upiPaidForOrder.toFixed(2)} and CAMPORA Cash allocated ₹${cashShare.toFixed(2)}.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       timeline: (order.timeline || []).map((step) => step.id === 't3' || step.title.toLowerCase().includes('payment') ? { ...step, title: 'Payment Confirmed', description: `Payment verified as part of combined checkout ${batch.id}.`, status: 'completed' as const, timestamp: now } : step),
@@ -2370,24 +2370,28 @@ app.patch('/api/admin/orders/:id/quote', requireAdmin, async (req: RequestWithUs
   const orderIndex = ordersStore.findIndex((o) => o.id.toLowerCase() === req.params.id.toLowerCase());
   if (orderIndex === -1) { res.status(404).json({ error: 'Order not found.' }); return; }
   const order = ordersStore[orderIndex];
-  const amount = Number(req.body?.amount);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000 || Math.round(amount * 100) !== amount * 100) {
+  const baseAmount = Number(req.body?.amount);
+  if (!Number.isFinite(baseAmount) || baseAmount <= 0 || baseAmount > 1000000 || Math.round(baseAmount * 100) !== baseAmount * 100) {
     res.status(400).json({ error: 'Enter a valid quote amount greater than ₹0, with up to two decimal places.' }); return;
   }
   if (order.paymentStatus === 'paid' || ['cancelled', 'rejected', 'completed'].includes(order.status)) {
     res.status(409).json({ error: 'A quote cannot be changed after payment or after the order is closed.' }); return;
   }
+  const urgentSurchargePercent = order.urgentSurchargePercent === 30 ? 30 : 0;
+  const amount = Math.round(baseAmount * (1 + urgentSurchargePercent / 100) * 100) / 100;
   const now = new Date().toISOString();
   const updatedOrder: CamporaOrder = {
     ...order,
-    subtotal: amount,
+    subtotal: baseAmount,
+    urgentSurchargePercent,
+    urgentSurchargeAmount: Math.round((amount - baseAmount) * 100) / 100,
     finalPrice: amount,
     total: amount,
     quoteStatus: 'sent',
     paymentStatus: 'pending',
     status: 'quote_sent',
-    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'quote_sent', description: `Final quote of ₹${amount.toFixed(2)} set by CAMPORA Admin. Customer can now pay from My Orders.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
-    timeline: [...(order.timeline || []), { id: `quote-${Date.now()}`, title: 'Custom Quote Ready', description: `CAMPORA has confirmed your final price: ₹${amount.toFixed(2)}. You can now pay from My Orders.`, timestamp: now, status: 'current' }],
+    activityHistory: [...(order.activityHistory || []), { id: `act-${Date.now()}`, action: 'quote_sent', description: `Base quote of ₹${baseAmount.toFixed(2)} set by CAMPORA Admin${urgentSurchargePercent ? `; approved ${urgentSurchargePercent}% urgent surcharge applied` : ''}. Final customer price: ₹${amount.toFixed(2)}.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
+    timeline: [...(order.timeline || []), { id: `quote-${Date.now()}`, title: 'Custom Quote Ready', description: `CAMPORA has confirmed your final price: ₹${amount.toFixed(2)}${urgentSurchargePercent ? ` (includes ${urgentSurchargePercent}% urgent surcharge)` : ''}. You can now pay from My Orders.`, timestamp: now, status: 'current' }],
     updatedAt: now,
   };
   ordersStore[orderIndex] = updatedOrder;
@@ -2508,6 +2512,81 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   res.status(400).json({ error: 'Invalid payment verification action.' });
 });
 
+// Admin confirms that the actual payment refund has been processed. Any CAMPORA Cash used on this order is restored once.
+app.patch('/api/admin/orders/:id/refund', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const orderIndex = ordersStore.findIndex((item) => item.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex === -1) return res.status(404).json({ error: 'Order not found.' });
+  const order = ordersStore[orderIndex];
+  if (order.refundStatus === 'refunded') {
+    return res.json({ success: true, order: await hydrateOrderForResponse(order), message: 'This refund was already recorded.' });
+  }
+  if (order.refundStatus !== 'requested' && order.refundStatus !== 'processing') {
+    return res.status(409).json({ error: 'This order does not have a pending refund request.' });
+  }
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+  if (!reason) return res.status(400).json({ error: 'Confirm the actual payment refund and provide an audit reason.' });
+
+  const cashToRestore = Math.round(Number(order.camporaCashRedeemed || 0) * 100) / 100;
+  if (cashToRestore > 0) {
+    const { error: walletError } = await supabase.rpc('campora_wallet_apply_entry', {
+      p_customer_id: order.customerId,
+      p_entry_type: 'refund_reversal',
+      p_amount: cashToRestore,
+      p_reference_key: `refund:${order.id}`,
+      p_description: `Restored ₹${cashToRestore.toFixed(2)} CAMPORA Cash after refund of order ${order.id}. ${reason}`,
+    });
+    if (walletError) return res.status(409).json({ error: 'CAMPORA Cash could not be restored. The refund status was not changed; please retry or inspect the wallet ledger.' });
+  }
+
+  let referralRewardReversed = 0;
+  const { data: referralUse } = await supabase.from('campora_referral_uses')
+    .select('referrer_id,qualifying_order_id,reward_status')
+    .eq('referred_customer_id', order.customerId).maybeSingle();
+  if (referralUse?.reward_status === 'credited' && referralUse.qualifying_order_id === order.id) {
+    const { error: reversalError } = await supabase.rpc('campora_wallet_apply_entry', {
+      p_customer_id: referralUse.referrer_id,
+      p_entry_type: 'refund_reversal',
+      p_amount: -100,
+      p_reference_key: `referral-reversal:${order.id}`,
+      p_description: `Reversal of ₹100 referral reward because qualifying order ${order.id} was refunded.`,
+    });
+    if (!reversalError) {
+      referralRewardReversed = 100;
+      await supabase.from('campora_referral_uses').update({ reward_status: 'reversed' })
+        .eq('referred_customer_id', order.customerId).eq('reward_status', 'credited');
+    } else {
+      console.warn('Referral reward could not be reversed during refund:', reversalError.message);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const updatedOrder: CamporaOrder = {
+    ...order,
+    refundStatus: 'refunded',
+    refundedAt: now,
+    activityHistory: [...(order.activityHistory || []), {
+      id: `act-${randomBytes(5).toString('hex')}`,
+      action: 'refund_completed',
+      description: `Admin confirmed the actual payment refund. ${cashToRestore > 0 ? `₹${cashToRestore.toFixed(2)} CAMPORA Cash was restored.` : 'No CAMPORA Cash restoration was due.'} ${referralRewardReversed > 0 ? 'The ₹100 referral reward was also reversed from the referrer wallet.' : ''} Reason: ${reason}`,
+      actor: req.user?.name || 'CAMPORA Admin',
+      timestamp: now,
+    }],
+    updatedAt: now,
+  };
+  ordersStore[orderIndex] = updatedOrder;
+  try {
+    await persistState();
+  } catch (error) {
+    ordersStore[orderIndex] = order;
+    throw error;
+  }
+  res.json({
+    success: true,
+    order: await hydrateOrderForResponse(updatedOrder),
+    message: cashToRestore > 0 ? `Refund recorded and ₹${cashToRestore.toFixed(2)} CAMPORA Cash restored.` : 'Refund recorded successfully.',
+  });
+});
+
 // Admin Upload Completed Deliverable
 app.post('/api/admin/orders/:id/deliverables', deliverableUploadLimiter, requireAdmin, express.json({ limit: '22mb' }), async (req: RequestWithUser, res: Response) => {
   const orderId = req.params.id;
@@ -2624,13 +2703,14 @@ app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUs
 
 // Admin referral and wallet oversight. All adjustments are ledger-backed and require an audit reason.
 app.get('/api/admin/referrals', requireAdmin, async (_req: RequestWithUser, res: Response) => {
-  const [{ data: codes, error: codeError }, { data: uses, error: usesError }, { data: wallets, error: walletError }, { data: ledger, error: ledgerError }] = await Promise.all([
+  const [{ data: codes, error: codeError }, { data: uses, error: usesError }, { data: wallets, error: walletError }, { data: ledger, error: ledgerError }, { data: audit, error: auditError }] = await Promise.all([
     supabase.from('campora_referral_codes').select('code,referrer_id,usage_count,max_usage,created_at').order('created_at', { ascending: false }),
     supabase.from('campora_referral_uses').select('referred_customer_id,code,referrer_id,qualifying_order_id,reward_status,credited_at,created_at').order('created_at', { ascending: false }),
     supabase.from('campora_wallets').select('customer_id,balance,updated_at').order('updated_at', { ascending: false }),
-    supabase.from('campora_wallet_ledger').select('customer_id,entry_type,amount,reference_key,description,created_at').order('created_at', { ascending: false }).limit(200),
+    supabase.from('campora_wallet_ledger').select('id,customer_id,entry_type,amount,reference_key,description,created_at').order('created_at', { ascending: false }).limit(200),
+    supabase.from('campora_referral_admin_audit').select('id,referral_code,referrer_id,old_usage_count,new_usage_count,reason,admin_id,admin_name,created_at').order('created_at', { ascending: false }).limit(100),
   ]);
-  if (codeError || usesError || walletError || ledgerError) return res.status(503).json({ error: 'Referral records are temporarily unavailable.' });
+  if (codeError || usesError || walletError || ledgerError || auditError) return res.status(503).json({ error: 'Referral records are temporarily unavailable.' });
   const customerName = (id: string) => usersStore.find((user) => user.id === id)?.name || id;
   res.setHeader('Cache-Control', 'no-store');
   res.json({
@@ -2638,7 +2718,31 @@ app.get('/api/admin/referrals', requireAdmin, async (_req: RequestWithUser, res:
     uses: (uses || []).map((item: any) => ({ ...item, referrerName: customerName(item.referrer_id), referredName: customerName(item.referred_customer_id) })),
     wallets: (wallets || []).map((item: any) => ({ ...item, customerName: customerName(item.customer_id) })),
     ledger: (ledger || []).map((item: any) => ({ ...item, customerName: customerName(item.customer_id) })),
+    audit: audit || [],
   });
+});
+app.patch('/api/admin/referrals/:code/usage', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const code = typeof req.params.code === 'string' ? req.params.code.trim().toUpperCase() : '';
+  const newUsageCount = Number(req.body?.newUsageCount);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+  if (!code || !Number.isInteger(newUsageCount) || newUsageCount < 0 || newUsageCount > 3 || !reason) {
+    return res.status(400).json({ error: 'Provide a referral code, a whole-number count from 0 to 3, and an audit reason.' });
+  }
+  const { data, error } = await supabase.rpc('campora_admin_adjust_referral_usage', {
+    p_code: code,
+    p_new_usage_count: newUsageCount,
+    p_reason: reason,
+    p_admin_id: req.user?.id || 'admin',
+    p_admin_name: req.user?.name || 'CAMPORA Admin',
+  });
+  if (error) {
+    const message = error.message || '';
+    return res.status(409).json({ error: message.includes('recorded registrations')
+      ? 'Referral count cannot be lower than the number of registered referrals.'
+      : message.includes('not found') ? 'Referral code was not found.' : 'Referral count correction could not be saved.' });
+  }
+  const usageCount = Array.isArray(data) ? Number(data[0]?.usage_count ?? newUsageCount) : newUsageCount;
+  res.json({ success: true, usageCount, message: `Referral usage count updated to ${usageCount}/3. The correction was recorded in the admin audit log.` });
 });
 app.patch('/api/admin/customers/:id/wallet', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const customerId = req.params.id;
@@ -2657,41 +2761,56 @@ app.patch('/api/admin/customers/:id/wallet', requireAdmin, async (req: RequestWi
   res.json({ success: true, balance: Array.isArray(data) ? Number(data[0]?.new_balance || 0) : 0, message: 'Wallet adjustment saved in the transaction ledger.' });
 });
 
-// Admin List All Customers
-app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Response) => {
+// Admin List All Customers, including accounts that have not placed an order yet.
+app.get('/api/admin/customers', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const customerMap = new Map<string, any>();
-
+  usersStore.filter((user) => user.role === 'customer').forEach((user) => {
+    customerMap.set(user.id, {
+      id: user.id, name: user.name, email: user.email, whatsapp: user.whatsapp || '',
+      college: user.college || '', ordersCount: 0, totalSpend: 0, orders: [],
+      referralCode: '', referralUsage: 0, successfulReferrals: 0, walletBalance: 0,
+    });
+  });
   ordersStore.forEach((ord) => {
-    const key = ord.customerEmail.toLowerCase();
-    if (!customerMap.has(key)) {
-      customerMap.set(key, {
-        id: ord.customerId,
-        name: ord.customerName,
-        email: ord.customerEmail,
-        whatsapp: ord.whatsappNumber,
-        college: ord.college,
-        ordersCount: 0,
-        totalSpend: 0,
-        orders: [],
+    if (!customerMap.has(ord.customerId)) {
+      customerMap.set(ord.customerId, {
+        id: ord.customerId, name: ord.customerName, email: ord.customerEmail,
+        whatsapp: ord.whatsappNumber, college: ord.college, ordersCount: 0,
+        totalSpend: 0, orders: [], referralCode: '', referralUsage: 0,
+        successfulReferrals: 0, walletBalance: 0,
       });
     }
-
-    const c = customerMap.get(key);
-    c.ordersCount += 1;
-    if (ord.paymentStatus === 'paid') {
-      c.totalSpend += ord.finalPrice || ord.total;
-    }
-    c.orders.push({
-      id: ord.id,
-      serviceName: ord.serviceName,
-      status: ord.status,
-      paymentStatus: ord.paymentStatus,
-      total: ord.finalPrice || ord.total,
-      createdAt: ord.createdAt,
+    const customer = customerMap.get(ord.customerId);
+    customer.ordersCount += 1;
+    if (ord.paymentStatus === 'paid') customer.totalSpend += Number(ord.finalPrice || ord.total || 0);
+    customer.orders.push({
+      id: ord.id, serviceName: ord.serviceName, status: ord.status,
+      paymentStatus: ord.paymentStatus, total: ord.finalPrice || ord.total, createdAt: ord.createdAt,
     });
   });
 
-  res.json({ customers: Array.from(customerMap.values()) });
+  const [{ data: codes, error: codeError }, { data: wallets, error: walletError }, { data: uses, error: usesError }] = await Promise.all([
+    supabase.from('campora_referral_codes').select('code,referrer_id,usage_count'),
+    supabase.from('campora_wallets').select('customer_id,balance'),
+    supabase.from('campora_referral_uses').select('referrer_id,reward_status'),
+  ]);
+  if (codeError || walletError || usesError) return res.status(503).json({ error: 'Customer referral and wallet details are temporarily unavailable.' });
+  for (const code of codes || []) {
+    const customer = customerMap.get(code.referrer_id);
+    if (customer) customer.referralCode = code.code;
+    if (customer) customer.referralUsage = Number(code.usage_count || 0);
+  }
+  for (const wallet of wallets || []) {
+    const customer = customerMap.get(wallet.customer_id);
+    if (customer) customer.walletBalance = Number(wallet.balance || 0);
+  }
+  for (const use of uses || []) {
+    const customer = customerMap.get(use.referrer_id);
+    if (customer && use.reward_status === 'credited') customer.successfulReferrals += 1;
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ customers: Array.from(customerMap.values()).sort((a, b) => a.name.localeCompare(b.name)) });
 });
 
 // Admin File Repository Aggregator
