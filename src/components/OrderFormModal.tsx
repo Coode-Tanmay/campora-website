@@ -514,7 +514,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
               </h3>
               <p className="text-sm text-[#B8B8B8] max-w-lg mx-auto mt-2">
                 {createdOrderSummary.requiresReview
-                  ? 'Our academic review desk is examining your brief. You will receive quote confirmation on your WhatsApp & dashboard shortly.'
+                  ? 'Your request has been saved. Our admin will review it and contact you manually on WhatsApp with the final price.'
                   : 'Your order has been securely recorded. Scan the UPI QR, upload your payment screenshot, and optionally enter your UTR for admin verification.'}
               </p>
             </div>
@@ -1214,7 +1214,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
                         <span>Quote Review Process</span>
                       </div>
                       <p className="text-[#B8B8B8] leading-relaxed">
-                        Because your order has custom scope or exceeded 20 pages/slides, our academic team will review your guidelines immediately. You will receive a final confirmed price & payment link within 15–30 minutes on WhatsApp ({whatsappNumber}).
+                        Because your order has custom scope or exceeded 20 pages/slides, our academic team will review your guidelines immediately. Our admin will discuss the requirements with you on WhatsApp and set the final price in your My Orders page ({whatsappNumber}).
                       </p>
                     </div>
                   )}
