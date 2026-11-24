@@ -319,6 +319,7 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
     setIsProcessing(true);
     setStepError('');
     setPaymentProofSubmitted(false);
+    const quoteWhatsAppWindow = requiresAdminReview ? window.open('about:blank', '_blank') : null;
 
     const initialStatus: OrderStatus = requiresAdminReview ? 'requirements_review' : 'new_order';
     const initialQuoteStatus: QuoteStatus = requiresAdminReview ? 'pending' : 'not_required';
@@ -380,9 +381,31 @@ export const OrderFormModal: React.FC<OrderFormModalProps> = ({
         })),
       );
       const savedOrder = await onOrderCreated(newOrder, uploadFiles);
+      if (requiresAdminReview && quoteWhatsAppWindow) {
+        const quoteMessage = [
+          'Hi CAMPORA Team! I have just submitted a custom quote request on your website.',
+          '',
+          `Order ID: ${savedOrder.id}`,
+          `Service: ${savedOrder.serviceName}`,
+          `Name: ${savedOrder.customerName}`,
+          `WhatsApp: ${savedOrder.whatsappNumber}`,
+          `College: ${savedOrder.college}`,
+          `Topic / Project: ${savedOrder.topic}`,
+          `Pages / Slides: ${savedOrder.pagesOrSlides}`,
+          `Deadline: ${savedOrder.deadline}`,
+          `Instructions: ${savedOrder.instructions || 'Not provided'}`,
+          `Reference files: ${savedOrder.referenceFiles?.length ? savedOrder.referenceFiles.map((file) => file.name).join(', ') : 'None'}`,
+          '',
+          'Please review my submitted requirements and let me know the final price and next steps.'
+        ].join('\\n');
+        quoteWhatsAppWindow.location.href = `https://wa.me/917559225529?text=${encodeURIComponent(quoteMessage)}`;
+      } else if (requiresAdminReview && !quoteWhatsAppWindow) {
+        setStepError('Your quote request was saved. Please open WhatsApp and message CAMPORA with order ID ' + savedOrder.id + '.');
+      }
       setCreatedOrderSummary(savedOrder);
       setOrderCompletedSuccess(true);
     } catch (error: any) {
+      if (quoteWhatsAppWindow && !quoteWhatsAppWindow.closed) quoteWhatsAppWindow.close();
       setStepError(error?.message || 'We could not save your order. Please try again.');
     } finally {
       setIsProcessing(false);
