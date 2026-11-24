@@ -167,6 +167,21 @@ export const api = {
     return fetchJson<{ success: boolean; pending?: boolean; message: string; order?: CamporaOrder }>(`${API_BASE}/customer/orders/${encodeURIComponent(orderId)}/razorpay/verify`, { method: 'POST', body: JSON.stringify(response) });
   },
 
+  async getCustomerCart(): Promise<{ items: CamporaOrder[] }> { return fetchJson(`${API_BASE}/customer/cart`); },
+  async addCartItem(orderId: string): Promise<{ success: boolean }> { return fetchJson(`${API_BASE}/customer/cart/items/${encodeURIComponent(orderId)}`, { method: 'POST', body: JSON.stringify({}) }); },
+  async removeCartItem(orderId: string): Promise<{ success: boolean }> { return fetchJson(`${API_BASE}/customer/cart/items/${encodeURIComponent(orderId)}`, { method: 'DELETE' }); },
+  async getWallet(): Promise<{ balance: number; referralCode: string; referralUsage: number; referralLimit: number; successfulReferrals: number; ledger: any[] }> { return fetchJson(`${API_BASE}/customer/wallet`); },
+  async createCombinedCheckout(cashToRedeem: number): Promise<{ success: boolean; checkout: { id: string; orderIds: string[]; subtotal: number; cashRedeemed: number; amountDue: number } }> {
+    return fetchJson(`${API_BASE}/customer/cart/checkout`, { method: 'POST', body: JSON.stringify({ cashToRedeem }) });
+  },
+  async submitCombinedPayment(checkoutId: string, payload: { utrNumber?: string; screenshotUrl: string; screenshotName?: string }): Promise<{ success: boolean; message: string }> {
+    return fetchJson(`${API_BASE}/customer/cart/checkout/${encodeURIComponent(checkoutId)}/payment`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+  async getAdminCheckoutBatches(): Promise<{ batches: any[] }> { return fetchJson(`${API_BASE}/admin/checkout-batches`); },
+  async verifyCombinedPayment(checkoutId: string, action: 'confirm' | 'reject', rejectionReason?: string): Promise<{ success: boolean; message: string }> {
+    return fetchJson(`${API_BASE}/admin/checkout-batches/${encodeURIComponent(checkoutId)}/payment`, { method: 'PATCH', body: JSON.stringify({ action, rejectionReason }) });
+  },
+
   async getCustomerProfile(): Promise<{ user: AuthUser; stats: any }> {
     return fetchJson<{ user: AuthUser; stats: any }>(`${API_BASE}/customer/profile`);
   },
