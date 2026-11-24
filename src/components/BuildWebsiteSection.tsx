@@ -26,6 +26,7 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
   const [pages, setPages] = useState('Home, About, Services, Contact');
   const [designReference, setDesignReference] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [whatsapp, setWhatsapp] = useState(user?.whatsapp || '');
   const [description, setDescription] = useState('');
   const [budget, setBudget] = useState('');
   const [deadline, setDeadline] = useState('');
@@ -38,7 +39,7 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
   const submitQuote = async () => {
     setError('');
     if (!isCustomer || !user) { onRequireLogin(); return; }
-    if (!businessName.trim() || !description.trim()) { setError('Please enter your business/project name and describe what website you need.'); return; }
+    if (!businessName.trim() || !description.trim() || !whatsapp.trim()) { setError('Please enter your business/project name, WhatsApp number and website description.'); return; }
     if (submitting) return;
     setSubmitting(true);
     try {
@@ -61,7 +62,7 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
         customerId: user.id,
         customerName: user.name,
         customerEmail: user.email,
-        whatsappNumber: user.whatsapp || '',
+        whatsappNumber: whatsapp.trim(),
         college: user.college || 'Not provided',
         serviceId: 'website-development',
         serviceName: 'Website Development',
@@ -148,6 +149,7 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
             </div>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
+            <div><label className="block text-xs text-zinc-300 mb-1.5">WhatsApp Number *</label><input value={whatsapp} onChange={(e)=>setWhatsapp(e.target.value)} maxLength={30} className="w-full rounded-xl bg-[#101012] border border-zinc-800 px-3 py-3 text-sm text-white outline-none focus:border-[#D4A72C]" placeholder="Your WhatsApp number"/></div>
             <div><label className="block text-xs text-zinc-300 mb-1.5">Business / Project Name *</label><input value={businessName} onChange={(e)=>setBusinessName(e.target.value)} maxLength={100} className="w-full rounded-xl bg-[#101012] border border-zinc-800 px-3 py-3 text-sm text-white outline-none focus:border-[#D4A72C]" placeholder="e.g. ABC Academy"/></div>
             <div><label className="block text-xs text-zinc-300 mb-1.5">Pages Needed</label><input value={pages} onChange={(e)=>setPages(e.target.value)} maxLength={300} className="w-full rounded-xl bg-[#101012] border border-zinc-800 px-3 py-3 text-sm text-white outline-none focus:border-[#D4A72C]" placeholder="Home, About, Contact..."/></div>
             <div><label className="block text-xs text-zinc-300 mb-1.5">Design Reference (optional)</label><input value={designReference} onChange={(e)=>setDesignReference(e.target.value)} maxLength={500} className="w-full rounded-xl bg-[#101012] border border-zinc-800 px-3 py-3 text-sm text-white outline-none focus:border-[#D4A72C]" placeholder="Website link or style reference"/></div>
