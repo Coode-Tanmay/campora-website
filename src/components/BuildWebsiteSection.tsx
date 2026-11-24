@@ -9,7 +9,23 @@ interface BuildWebsiteSectionProps {
   onSubmitted: (order: CamporaOrder) => void;
 }
 
-const WEBSITE_TYPES = ['Personal portfolio', 'Business website', 'E-commerce store', 'Educational website', 'Custom website'];
+const WEBSITE_TYPES = ['Personal portfolio', 'Business website', 'E-commerce store', 'Educational / LMS website', 'Custom website'];
+const WEBSITE_PACKAGES = [
+  { id: 'portfolio', title: 'Personal Portfolio', price: '₹1,999', description: 'Up to 3 pages, projects, skills and contact section.' },
+  { id: 'starter', title: 'Starter Website', price: '₹2,499', description: 'Up to 3 responsive pages and a contact section; provider subdomain.' },
+  { id: 'business', title: 'Business Website', price: '₹5,999', description: 'Up to 5 pages, contact form and basic SEO; custom domain setup.' },
+  { id: 'ecommerce', title: 'E-commerce Website', price: '₹9,999', description: 'Product catalogue, cart and order management; payment integration quoted separately.' },
+  { id: 'education', title: 'Educational / LMS', price: '₹7,999', description: 'Course pages, student login and a basic learning dashboard.' },
+  { id: 'custom', title: 'Custom Website', price: 'Custom quote', description: 'A tailored build priced after requirements review.' },
+];
+const MAINTENANCE_OPTIONS = [
+  { id: 'none', label: 'No maintenance required', price: 'Included in no ongoing plan' },
+  { id: 'one-time-update', label: 'One-time minor update', price: '₹199 onwards' },
+  { id: 'one-time-bugfix', label: 'One-time bug fixing', price: '₹299 onwards' },
+  { id: 'basic-monthly', label: 'Basic monthly maintenance', price: '₹499/month' },
+  { id: 'standard-monthly', label: 'Standard monthly maintenance', price: '₹999/month' },
+  { id: 'premium-monthly', label: 'Premium monthly maintenance', price: '₹1,999/month' },
+];
 const FEATURES = [
   { id: 'payment', label: 'Payment gateway', icon: CreditCard },
   { id: 'admin', label: 'Admin dashboard', icon: LayoutDashboard },
@@ -20,7 +36,10 @@ const FEATURES = [
 
 export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequireLogin, onSubmitted }) => {
   const { user, isCustomer } = useAuth();
-  const [packageType, setPackageType] = useState<'starter' | 'business'>('business');
+  const [packageType, setPackageType] = useState<'portfolio' | 'starter' | 'business' | 'ecommerce' | 'education' | 'custom'>('business');
+  const [maintenanceOnly, setMaintenanceOnly] = useState(false);
+  const [maintenancePlan, setMaintenancePlan] = useState('none');
+  const [existingWebsiteUrl, setExistingWebsiteUrl] = useState('');
   const [websiteType, setWebsiteType] = useState('Business website');
   const [features, setFeatures] = useState<string[]>(['payment', 'admin']);
   const [pages, setPages] = useState('Home, About, Services, Contact');
@@ -39,13 +58,13 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
   const submitQuote = async () => {
     setError('');
     if (!isCustomer || !user) { onRequireLogin(); return; }
-    if (!businessName.trim() || !description.trim() || !whatsapp.trim()) { setError('Please enter your business/project name, WhatsApp number and website description.'); return; }
+    if (!businessName.trim() || !description.trim() || !whatsapp.trim() || (maintenanceOnly && !existingWebsiteUrl.trim())) { setError(maintenanceOnly ? 'Please enter your project name, WhatsApp number, existing website URL and maintenance requirements.' : 'Please enter your business/project name, WhatsApp number and website description.'); return; }
     if (submitting) return;
     setSubmitting(true);
     try {
       const summary = [
         'CAMPORA WEBSITE DEVELOPMENT QUOTE',
-        `Package: ${packageType === 'starter' ? 'Starter — provider subdomain' : 'Business — custom domain'}`,
+        `Request type: ${maintenanceOnly ? 'Maintenance for an existing website' : 'New website build'},\nPackage: ${maintenanceOnly ? 'Not applicable — maintenance only' : WEBSITE_PACKAGES.find((item) => item.id === packageType)?.title || packageType},\nPackage starting price: ${maintenanceOnly ? 'Not applicable' : WEBSITE_PACKAGES.find((item) => item.id === packageType)?.price || 'Custom quote'},\nMaintenance selection: ${MAINTENANCE_OPTIONS.find((item) => item.id === maintenancePlan)?.label || 'Not selected'} (${MAINTENANCE_OPTIONS.find((item) => item.id === maintenancePlan)?.price || 'To be quoted'}),\nExisting website: ${existingWebsiteUrl.trim() || 'New website'}`,
         `Website type: ${websiteType}`,
         `Business / project name: ${businessName.trim()}`,
         `Requested pages: ${pages.trim() || 'To be discussed'}`,
@@ -65,7 +84,7 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
         whatsappNumber: whatsapp.trim(),
         college: user.college || 'Not provided',
         serviceId: 'website-development',
-        serviceName: 'Website Development',
+        serviceName: maintenanceOnly ? 'Website Maintenance' : 'Website Development',
         pricingType: 'variable',
         topic: `${websiteType} — ${businessName.trim()}`.slice(0, 300),
         pagesOrSlides: 1,
@@ -118,22 +137,38 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
           <p className="mt-3 text-sm sm:text-base text-zinc-400">Choose the website you need. Tell us your requirements and our team will prepare a custom quotation.</p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-8">
-          <button type="button" onClick={() => setPackageType('starter')} className={`text-left rounded-2xl p-5 border transition-all ${packageType === 'starter' ? 'border-[#D4A72C] bg-[#D4A72C]/10 shadow-lg shadow-[#D4A72C]/5' : 'border-zinc-800 bg-[#171717] hover:border-zinc-600'}`}>
-            <div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-[#D4A72C]">Package 01</span>{packageType === 'starter' && <CheckCircle2 className="w-5 h-5 text-[#D4A72C]"/>}</div>
-            <h2 className="mt-3 text-xl font-bold text-white">Starter Website</h2>
-            <p className="mt-1 text-xs text-zinc-400">Provider subdomain · no planned recurring hosting cost on suitable free tiers</p>
-            <ul className="mt-4 space-y-2 text-xs text-zinc-300"><li>• Custom responsive design</li><li>• Hosting on a suitable free provider tier</li><li>• Provider subdomain (e.g. yourname.vercel.app)</li><li>• Basic pages and contact form</li></ul>
-          </button>
-          <button type="button" onClick={() => setPackageType('business')} className={`text-left rounded-2xl p-5 border transition-all ${packageType === 'business' ? 'border-[#D4A72C] bg-[#D4A72C]/10 shadow-lg shadow-[#D4A72C]/5' : 'border-zinc-800 bg-[#171717] hover:border-zinc-600'}`}>
-            <div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-[#D4A72C]">Package 02 · Premium</span>{packageType === 'business' && <CheckCircle2 className="w-5 h-5 text-[#D4A72C]"/>}</div>
-            <h2 className="mt-3 text-xl font-bold text-white">Business Website</h2>
-            <p className="mt-1 text-xs text-zinc-400">Customer-owned custom domain · running costs quoted separately</p>
-            <ul className="mt-4 space-y-2 text-xs text-zinc-300"><li>• Everything in Starter, as required</li><li>• Customer-owned custom domain</li><li>• Payment gateway integration, if selected</li><li>• Production backend and database, if required</li></ul>
-          </button>
+        <div className="rounded-2xl border border-zinc-800 bg-[#141416] p-5 mb-6">
+          <label className="flex items-center gap-3 text-sm font-semibold text-white cursor-pointer">
+            <input type="checkbox" checked={maintenanceOnly} onChange={(event) => setMaintenanceOnly(event.target.checked)} className="accent-amber-500 w-4 h-4" />
+            I only need maintenance for an existing website
+          </label>
+          {maintenanceOnly ? (
+            <div className="mt-4">
+              <label className="block text-xs text-zinc-300 mb-1.5">Existing website URL *</label>
+              <input value={existingWebsiteUrl} onChange={(event) => setExistingWebsiteUrl(event.target.value)} maxLength={500} className="w-full rounded-xl bg-[#101012] border border-zinc-800 px-3 py-3 text-sm text-white outline-none focus:border-[#D4A72C]" placeholder="https://yourwebsite.com" />
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+              {WEBSITE_PACKAGES.map((item) => (
+                <button key={item.id} type="button" onClick={() => setPackageType(item.id as typeof packageType)} className={`text-left rounded-xl p-4 border transition-all ${packageType === item.id ? 'border-[#D4A72C] bg-[#D4A72C]/10' : 'border-zinc-800 bg-[#101012] hover:border-zinc-600'}`}>
+                  <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-white">{item.title}</span>{packageType === item.id && <CheckCircle2 className="w-4 h-4 text-[#D4A72C]" />}</div>
+                  <div className="text-lg font-black text-[#F0D27A] mt-2">{item.price}</div>
+                  <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">{item.description}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-zinc-800 bg-[#141416] p-5 sm:p-7 space-y-7">
+          <div>
+            <h2 className="text-lg font-bold text-white">Website Management & Maintenance (Optional)</h2>
+            <p className="text-xs text-zinc-500 mt-1">Maintenance is charged separately from website creation. Monthly plans are renewed manually; no automatic billing is used.</p>
+            <select value={maintenancePlan} onChange={(event) => setMaintenancePlan(event.target.value)} className="mt-3 w-full rounded-xl bg-[#101012] border border-zinc-800 px-3 py-3 text-sm text-white outline-none focus:border-[#D4A72C]">
+              {MAINTENANCE_OPTIONS.map((item) => <option key={item.id} value={item.id}>{item.label} — {item.price}</option>)}
+            </select>
+            <p className="text-[10px] text-zinc-500 mt-2">Domain, hosting and paid third-party services remain separate. CAMPORA will confirm the exact maintenance scope and renewal period before payment.</p>
+          </div>
           <div>
             <h2 className="text-lg font-bold text-white">1. Choose Website Type</h2>
             <p className="text-xs text-zinc-500 mt-1">Select the closest match. You can explain a custom requirement below.</p>
@@ -161,8 +196,9 @@ export const BuildWebsiteSection: React.FC<BuildWebsiteSectionProps> = ({ onRequ
 
           <div className="rounded-xl border border-[#D4A72C]/30 bg-[#D4A72C]/5 p-4">
             <h3 className="font-bold text-white text-sm">Your Selected Configuration</h3>
-            <p className="text-xs text-zinc-300 mt-2">{packageType === 'starter' ? 'Starter package · provider subdomain' : 'Business package · custom domain'}</p>
+            <p className="text-xs text-zinc-300 mt-2">{maintenanceOnly ? 'Maintenance-only request' : (WEBSITE_PACKAGES.find((item) => item.id === packageType)?.title || packageType)}</p>
             <p className="text-xs text-zinc-300 mt-1">{websiteType} · {features.length} additional feature{features.length === 1 ? '' : 's'} selected</p>
+            <p className="text-xs text-zinc-300 mt-1">Maintenance: {MAINTENANCE_OPTIONS.find((item) => item.id === maintenancePlan)?.label} · {MAINTENANCE_OPTIONS.find((item) => item.id === maintenancePlan)?.price}</p>
             <p className="text-sm font-bold text-[#F0D27A] mt-2">Final price: Admin quotation after reviewing requirements.</p>
             <p className="text-[11px] text-zinc-400 mt-2">Domain, hosting, database, email and payment-provider charges (if any) are separate third-party costs. We will explain recurring charges before you approve the quotation.</p>
           </div>
