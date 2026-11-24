@@ -2582,6 +2582,41 @@ app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUs
   res.json({ success: true, order: await hydrateOrderForResponse(ordersStore[orderIndex]) });
 });
 
+// Admin referral and wallet oversight. All adjustments are ledger-backed and require an audit reason.
+app.get('/api/admin/referrals', requireAdmin, async (_req: RequestWithUser, res: Response) => {
+  const [{ data: codes, error: codeError }, { data: uses, error: usesError }, { data: wallets, error: walletError }, { data: ledger, error: ledgerError }] = await Promise.all([
+    supabase.from('campora_referral_codes').select('code,referrer_id,usage_count,max_usage,created_at').order('created_at', { ascending: false }),
+    supabase.from('campora_referral_uses').select('referred_customer_id,code,referrer_id,qualifying_order_id,reward_status,credited_at,created_at').order('created_at', { ascending: false }),
+    supabase.from('campora_wallets').select('customer_id,balance,updated_at').order('updated_at', { ascending: false }),
+    supabase.from('campora_wallet_ledger').select('customer_id,entry_type,amount,reference_key,description,created_at').order('created_at', { ascending: false }).limit(200),
+  ]);
+  if (codeError || usesError || walletError || ledgerError) return res.status(503).json({ error: 'Referral records are temporarily unavailable.' });
+  const customerName = (id: string) => usersStore.find((user) => user.id === id)?.name || id;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    codes: (codes || []).map((item: any) => ({ ...item, referrerName: customerName(item.referrer_id) })),
+    uses: (uses || []).map((item: any) => ({ ...item, referrerName: customerName(item.referrer_id), referredName: customerName(item.referred_customer_id) })),
+    wallets: (wallets || []).map((item: any) => ({ ...item, customerName: customerName(item.customer_id) })),
+    ledger: (ledger || []).map((item: any) => ({ ...item, customerName: customerName(item.customer_id) })),
+  });
+});
+app.patch('/api/admin/customers/:id/wallet', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const customerId = req.params.id;
+  const amount = Number(req.body?.amount);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+  if (!usersStore.some((user) => user.id === customerId && user.role === 'customer')) return res.status(404).json({ error: 'Customer account not found.' });
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 100000 || Math.round(amount * 100) !== amount * 100 || !reason) {
+    return res.status(400).json({ error: 'Enter a non-zero adjustment up to ₹100,000 and an audit reason.' });
+  }
+  const { data, error } = await supabase.rpc('campora_wallet_apply_entry', {
+    p_customer_id: customerId, p_entry_type: 'admin_adjustment', p_amount: amount,
+    p_reference_key: `admin-${randomBytes(12).toString('hex')}`,
+    p_description: `Admin adjustment by ${req.user?.name || 'CAMPORA Admin'}: ${reason}`,
+  });
+  if (error) return res.status(409).json({ error: error.message.includes('Insufficient') ? 'Adjustment would make the wallet balance negative.' : 'Wallet adjustment could not be saved.' });
+  res.json({ success: true, balance: Array.isArray(data) ? Number(data[0]?.new_balance || 0) : 0, message: 'Wallet adjustment saved in the transaction ledger.' });
+});
+
 // Admin List All Customers
 app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Response) => {
   const customerMap = new Map<string, any>();
