@@ -1433,44 +1433,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
         {activeAdminTab === 'customers' && (
           <div className="max-w-7xl mx-auto space-y-4">
             <h2 className="text-xl font-bold text-white tracking-tight">Verified Student Client Accounts</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {customers.map((c) => (
-                <div key={c.id || c.email} className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center font-bold">
-                      {c.name?.charAt(0) || 'S'}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white text-sm">{c.name}</h3>
-                      <p className="text-[11px] text-zinc-400">{c.email}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-zinc-800/80">
-                    <div>
-                      <div className="text-zinc-500 text-[10px]">Total Orders</div>
-                      <div className="font-bold text-white">{c.ordersCount} Orders</div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-500 text-[10px]">Lifetime Spend</div>
-                      <div className="font-bold text-amber-400">₹{c.totalSpend}</div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-500 text-[10px]">Referrals Done</div>
-                      <div className="font-bold text-white">{c.referralUsage || 0}/3</div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-500 text-[10px]">CAMPORA Cash Owned</div>
-                      <div className="font-bold text-amber-300">₹{Number(c.walletBalance || 0).toFixed(2)}</div>
-                    </div>
-                    <div className="col-span-2">
-                      <div className="text-zinc-500 text-[10px]">College</div>
-                      <div className="text-zinc-300 font-medium truncate">{c.college || 'University Student'}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto">
+              <table className="w-full text-left text-xs min-w-[900px]">
+                <thead>
+                  <tr className="border-b border-zinc-800 text-zinc-500 uppercase tracking-wider text-[10px]">
+                    <th className="pb-3 pr-4">Customer</th>
+                    <th className="pb-3 px-3">Total Orders</th>
+                    <th className="pb-3 px-3">Lifetime Spend</th>
+                    <th className="pb-3 px-3">Referrals Done</th>
+                    <th className="pb-3 px-3">CAMPORA Cash Owned</th>
+                    <th className="pb-3 pl-3 text-right">Admin Controls</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800/70 text-zinc-300">
+                  {customers.map((customer) => (
+                    <tr key={customer.id || customer.email} className="hover:bg-zinc-900/50">
+                      <td className="py-3 pr-4">
+                        <div className="font-semibold text-white">{customer.name}</div>
+                        <div className="text-[10px] text-zinc-500">{customer.email}</div>
+                        <div className="text-[10px] text-zinc-500">{customer.college || 'University Student'}</div>
+                      </td>
+                      <td className="py-3 px-3 font-bold text-white">{customer.ordersCount || 0}</td>
+                      <td className="py-3 px-3 font-bold text-amber-300">₹{Number(customer.totalSpend || 0).toFixed(2)}</td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-white">{customer.referralUsage || 0}/3</div>
+                        <div className="text-[10px] text-zinc-500">{customer.successfulReferrals || 0} successful</div>
+                      </td>
+                      <td className="py-3 px-3 font-bold text-amber-300">₹{Number(customer.walletBalance || 0).toFixed(2)}</td>
+                      <td className="py-3 pl-3 text-right">
+                        <div className="inline-flex flex-wrap justify-end gap-2">
+                          <button onClick={() => customer.referralCode ? handleReferralUsageAdjustment(customer.referralCode, Number(customer.referralUsage || 0)) : triggerToast('This customer has not generated a referral code yet.')} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">Edit referrals</button>
+                          <button onClick={() => handleWalletAdjustment(customer.id)} className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300">Edit Cash</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {customers.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-zinc-500">No customer accounts found.</td></tr>}
+                </tbody>
+              </table>
+            </div>            </div>
           </div>
         )}
 
