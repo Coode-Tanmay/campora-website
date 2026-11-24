@@ -255,6 +255,9 @@ export const api = {
   async adjustCustomerWallet(customerId: string, amount: number, reason: string): Promise<{ success: boolean; balance: number; message: string }> {
     return fetchJson(`${API_BASE}/admin/customers/${encodeURIComponent(customerId)}/wallet`, { method: 'PATCH', body: JSON.stringify({ amount, reason }) });
   },
+  async adjustReferralUsage(code: string, newUsageCount: number, reason: string): Promise<{ success: boolean; usageCount: number; message: string }> {
+    return fetchJson(`${API_BASE}/admin/referrals/${encodeURIComponent(code)}/usage`, { method: 'PATCH', body: JSON.stringify({ newUsageCount, reason }) });
+  },
 
   async getAdminCustomers(): Promise<{ customers: any[] }> {
     return fetchJson<{ customers: any[] }>(`${API_BASE}/admin/customers`);
