@@ -209,11 +209,10 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                 {/* Bottom Order Action */}
                 <div className="mt-8 pt-4 border-t border-[#2A2A2A]">
                   {isVariable ? (
-                    <a
+                    <button
                       id={`btn-order-${service.id}`}
-                      href={quoteWhatsAppUrl(service.title)}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      type="button"
+                      onClick={() => onSelectService(service.id)}
                       className={`w-full py-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all ${
                         isPopular
                           ? 'bg-[#D4A72C] hover:bg-[#E5B93F] text-[#0B0B0B] shadow-lg shadow-[#D4A72C]/20'
@@ -224,7 +223,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
                     >
                       <span>Request Quote for {service.title}</span>
                       <ArrowRight className="w-3.5 h-3.5" />
-                    </a>
+                    </button>
                   ) : (
                     <button
                       id={`btn-order-${service.id}`}
