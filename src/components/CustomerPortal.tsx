@@ -491,11 +491,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                           ) : (
                             <button
                               id={`btn-pay-now-${ord.id}`}
-                              onClick={() => setShowPaymentModalFor(ord)}
+                              onClick={() => setActiveTab('cart')}
                               className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 font-medium text-xs transition-colors flex items-center gap-1.5"
                             >
                               <QrCode className="w-3.5 h-3.5" />
-                              {ord.paymentStatus === 'verification_pending' ? 'Proof Submitted' : 'Pay by UPI'}
+                              {ord.paymentStatus === 'verification_pending' ? 'Proof Submitted' : 'Pay in Cart'}
                             </button>
                           )}
                         </>
@@ -718,7 +718,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
                             {razorpayEnabled && ord.paymentStatus !== 'verification_pending' && (ord.status === 'approved' || ord.status === 'payment_pending' || ord.quoteStatus === 'accepted') ? (
                               <button onClick={() => handleStartRazorpayCheckout(ord)} disabled={startingPaymentFor === ord.id} className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20">{ord.paymentGateway?.status === 'created' ? 'Resume Checkout' : 'Pay Securely'}</button>
                             ) : (
-                              <button onClick={() => setShowPaymentModalFor(ord)} className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700">Manual UPI</button>
+                              <button onClick={() => setActiveTab('cart')} className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium border border-zinc-700">Pay in Cart</button>
                             )}
                           </div>
                         )}
