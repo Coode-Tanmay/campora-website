@@ -1423,7 +1423,7 @@ app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: R
 
   // Filter exclusively for this customer and mint short-lived URLs for private files.
   const userOrders = await Promise.all(ordersStore
-    .filter((o) => o.customerId === user.id)
+    .filter((o) => o.customerId === user.id && o.status !== 'cancelled')
     .map(async (order) => {
       const hydrated = await hydrateOrderForResponse(order);
       return toCustomerSafeOrder(hydrated);
@@ -1827,6 +1827,15 @@ app.post('/api/customer/orders/:id/cancel', requireAuth, async (req: RequestWith
     ordersStore[orderIndex] = order;
     throw error;
   }
+  // Keep the cancelled order in ordersStore for admin history, but remove it
+  // from the customer's cart and invalidate any unsubmitted QR checkout.
+  const customerCartIds = await getCustomerCartItems(user.id);
+  await saveCustomerCartItems(user.id, customerCartIds.filter((id) => id !== order.id));
+  await supabase.from('campora_checkout_batches')
+    .update({ payment_status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('customer_id', user.id)
+    .eq('payment_status', 'pending')
+    .contains('order_ids', [order.id]);
   res.json({ success: true, order: toCustomerSafeOrder(await hydrateOrderForResponse(updatedOrder)) });
 });
 
@@ -1937,12 +1946,12 @@ const ensureCustomerWalletAndReferral = async (customerId: string) => {
 app.get('/api/customer/cart', requireAuth, async (req: RequestWithUser, res: Response) => {
   if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
   const ids = await getCustomerCartItems(req.user!.id);
-  const items = await Promise.all(ids.map(async (id) => {
-    const order = ordersStore.find((item) => item.id === id && item.customerId === req.user!.id);
-    return order ? toCustomerSafeOrder(await hydrateOrderForResponse(order)) : null;
-  }));
+  const validOrders = ids.map((id) => ordersStore.find((item) => item.id === id && item.customerId === req.user!.id && item.status !== 'cancelled' && !['completed','rejected'].includes(item.status))).filter(Boolean) as CamporaOrder[];
+  const validIds = validOrders.map((order) => order.id);
+  if (validIds.length !== ids.length) await saveCustomerCartItems(req.user!.id, validIds);
+  const items = await Promise.all(validOrders.map(async (order) => toCustomerSafeOrder(await hydrateOrderForResponse(order))));
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ items: items.filter(Boolean) });
+  res.json({ items });
 });
 app.post('/api/customer/cart/items/:orderId', requireAuth, async (req: RequestWithUser, res: Response) => {
   if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
@@ -1978,6 +1987,14 @@ app.post('/api/customer/cart/checkout', requireAuth, async (req: RequestWithUser
   if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
   const ids = await getCustomerCartItems(req.user!.id);
   if (!ids.length) return res.status(400).json({ error: 'Your cart is empty.' });
+  const validIds = ids.filter((id) => {
+    const order = ordersStore.find((item) => item.id === id && item.customerId === req.user!.id);
+    return order && order.status !== 'cancelled' && !['completed','rejected'].includes(order.status);
+  });
+  if (validIds.length !== ids.length) {
+    await saveCustomerCartItems(req.user!.id, validIds);
+    return res.status(409).json({ error: 'Cancelled or closed orders were removed from your cart. Please review the updated cart.' });
+  }
   const selected = ids.map((id) => ordersStore.find((order) => order.id === id && order.customerId === req.user!.id)).filter(Boolean) as CamporaOrder[];
   if (selected.length !== ids.length) return res.status(409).json({ error: 'One or more cart items are no longer available. Refresh your cart.' });
   const blocked = selected.find((order) => order.paymentStatus === 'awaiting_quote' || order.status === 'requirements_review' || order.quoteStatus === 'pending' || (order.requiresReview && order.quoteStatus !== 'sent' && order.quoteStatus !== 'accepted'));
