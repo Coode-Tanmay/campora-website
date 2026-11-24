@@ -65,14 +65,14 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
             Transparent Pricing. Zero Hidden Fees.
           </h2>
           <p className="text-[#B8B8B8] text-sm sm:text-base mt-3">
-            Premium academic support engineered for high grades. Fixed transparent rates up to 20 pages/slides with revisions and university template support included.
+            Academic documents, presentations, PDFs, design, coding support and digital services. Fixed prices are shown where available; custom-scope services receive a clear quote before payment.
           </p>
 
           {/* Pricing notification banner */}
           <div className="mt-6 inline-flex flex-col sm:flex-row items-center gap-2 px-4 py-2.5 rounded-xl bg-[#171717] border border-[#2A2A2A] text-xs text-[#B8B8B8] shadow-sm text-left">
             <Info className="w-4 h-4 text-[#D4A72C] flex-shrink-0" />
             <span>
-              <strong>Smart Pricing:</strong> Listed pricing includes up to 20 pages/slides. Beyond 20 pages, our team reviews requirements for customized transparent pricing.
+              <strong>Smart Pricing:</strong> Some services are quote-first because price depends on file count, complexity and deadline. You will see the final price before making any payment.
             </span>
           </div>
         </div>
