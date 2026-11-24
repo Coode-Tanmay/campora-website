@@ -2538,6 +2538,27 @@ app.patch('/api/admin/orders/:id/refund', requireAdmin, async (req: RequestWithU
     if (walletError) return res.status(409).json({ error: 'CAMPORA Cash could not be restored. The refund status was not changed; please retry or inspect the wallet ledger.' });
   }
 
+  let referralRewardReversed = 0;
+  const { data: referralUse } = await supabase.from('campora_referral_uses')
+    .select('referrer_id,qualifying_order_id,reward_status')
+    .eq('referred_customer_id', order.customerId).maybeSingle();
+  if (referralUse?.reward_status === 'credited' && referralUse.qualifying_order_id === order.id) {
+    const { error: reversalError } = await supabase.rpc('campora_wallet_apply_entry', {
+      p_customer_id: referralUse.referrer_id,
+      p_entry_type: 'refund_reversal',
+      p_amount: -100,
+      p_reference_key: `referral-reversal:${order.id}`,
+      p_description: `Reversal of ₹100 referral reward because qualifying order ${order.id} was refunded.`,
+    });
+    if (!reversalError) {
+      referralRewardReversed = 100;
+      await supabase.from('campora_referral_uses').update({ reward_status: 'reversed' })
+        .eq('referred_customer_id', order.customerId).eq('reward_status', 'credited');
+    } else {
+      console.warn('Referral reward could not be reversed during refund:', reversalError.message);
+    }
+  }
+
   const now = new Date().toISOString();
   const updatedOrder: CamporaOrder = {
     ...order,
@@ -2546,7 +2567,7 @@ app.patch('/api/admin/orders/:id/refund', requireAdmin, async (req: RequestWithU
     activityHistory: [...(order.activityHistory || []), {
       id: `act-${randomBytes(5).toString('hex')}`,
       action: 'refund_completed',
-      description: `Admin confirmed the actual payment refund. ${cashToRestore > 0 ? `₹${cashToRestore.toFixed(2)} CAMPORA Cash was restored.` : 'No CAMPORA Cash restoration was due.'} Reason: ${reason}`,
+      description: `Admin confirmed the actual payment refund. ${cashToRestore > 0 ? `₹${cashToRestore.toFixed(2)} CAMPORA Cash was restored.` : 'No CAMPORA Cash restoration was due.'} ${referralRewardReversed > 0 ? 'The ₹100 referral reward was also reversed from the referrer wallet.' : ''} Reason: ${reason}`,
       actor: req.user?.name || 'CAMPORA Admin',
       timestamp: now,
     }],
