@@ -315,6 +315,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     } catch (error: any) { triggerToast(error.message || 'Wallet adjustment failed.'); }
   };
 
+  const handleReferralUsageAdjustment = async (code: string, currentCount: number) => {
+    const rawCount = window.prompt(`Set the corrected referral usage count for ${code} (0–3):`, String(currentCount));
+    if (rawCount === null) return;
+    const newUsageCount = Number(rawCount);
+    if (!Number.isInteger(newUsageCount) || newUsageCount < 0 || newUsageCount > 3) {
+      triggerToast('Referral usage count must be a whole number from 0 to 3.');
+      return;
+    }
+    const reason = window.prompt('Enter the audit reason for this referral-count correction:');
+    if (!reason?.trim()) return;
+    try {
+      const result = await api.adjustReferralUsage(code, newUsageCount, reason.trim());
+      triggerToast(result.message);
+      const refreshed = await api.getAdminReferrals();
+      setReferralData(refreshed);
+      await fetchAdminData(false);
+    } catch (error: any) {
+      triggerToast(error.message || 'Referral usage adjustment failed.');
+    }
+  };
+
   const handleVerifyCombinedPayment = async (batchId: string, action: 'confirm' | 'reject') => {
     const reason = action === 'reject' ? window.prompt('Enter the reason for rejecting this combined payment proof:') : undefined;
     if (action === 'reject' && !reason?.trim()) return;
@@ -1291,6 +1312,85 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
           </div>
         )}
 
+        {/* ================= REFERRALS & CAMPORA CASH ADMIN ================= */}
+        {activeAdminTab === 'referrals' && (
+          <div className="max-w-7xl mx-auto space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight">Referral Performance & CAMPORA Cash</h2>
+              <p className="text-xs text-zinc-400 mt-1">Review referral activity, wallet balances and audited manual corrections.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 rounded-xl bg-[#121215] border border-zinc-800">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500">Referral uses</div>
+                <div className="text-2xl font-black text-white mt-1">{referralData.codes.reduce((sum, item) => sum + Number(item.usage_count || 0), 0)}</div>
+              </div>
+              <div className="p-4 rounded-xl bg-[#121215] border border-zinc-800">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500">Successful referrals</div>
+                <div className="text-2xl font-black text-emerald-300 mt-1">{referralData.uses.filter((item) => item.reward_status === 'credited').length}</div>
+              </div>
+              <div className="p-4 rounded-xl bg-[#121215] border border-zinc-800">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500">Outstanding CAMPORA Cash</div>
+                <div className="text-2xl font-black text-amber-300 mt-1">₹{referralData.wallets.reduce((sum, item) => sum + Number(item.balance || 0), 0).toFixed(2)}</div>
+              </div>
+            </div>
+
+            <section className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto">
+              <h3 className="text-sm font-bold text-white mb-3">Customer Referral Counts</h3>
+              <table className="w-full text-left text-xs min-w-[650px]">
+                <thead><tr className="border-b border-zinc-800 text-zinc-500 uppercase text-[10px]">
+                  <th className="pb-3">Customer</th><th className="pb-3">Referral Code</th><th className="pb-3">Referrals Used</th><th className="pb-3">Successful</th><th className="pb-3 text-right">Correction</th>
+                </tr></thead>
+                <tbody className="divide-y divide-zinc-800/70">
+                  {referralData.codes.map((item) => (
+                    <tr key={item.code}>
+                      <td className="py-3"><div className="font-semibold text-white">{item.referrerName}</div><div className="text-[10px] text-zinc-500">{item.referrer_id}</div></td>
+                      <td className="py-3 font-mono text-amber-300">{item.code}</td>
+                      <td className="py-3 text-white tabular-nums">{item.usage_count}/{item.max_usage}</td>
+                      <td className="py-3 text-emerald-300">{referralData.uses.filter((use) => use.referrer_id === item.referrer_id && use.reward_status === 'credited').length}</td>
+                      <td className="py-3 text-right"><button onClick={() => handleReferralUsageAdjustment(item.code, Number(item.usage_count || 0))} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">Edit count</button></td>
+                    </tr>
+                  ))}
+                  {referralData.codes.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-zinc-500">No referral codes have been generated yet.</td></tr>}
+                </tbody>
+              </table>
+              <p className="text-[10px] text-zinc-500 mt-3">Corrections are restricted to 0–3 and cannot be lower than the number of recorded referral registrations. Every correction requires a reason and is written to the admin audit log.</p>
+            </section>
+
+            <section className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto">
+              <h3 className="text-sm font-bold text-white mb-3">Customer CAMPORA Cash Balances</h3>
+              <table className="w-full text-left text-xs min-w-[600px]">
+                <thead><tr className="border-b border-zinc-800 text-zinc-500 uppercase text-[10px]">
+                  <th className="pb-3">Customer</th><th className="pb-3">Wallet Balance</th><th className="pb-3">Last Updated</th><th className="pb-3 text-right">Admin Action</th>
+                </tr></thead>
+                <tbody className="divide-y divide-zinc-800/70">
+                  {referralData.wallets.map((item) => (
+                    <tr key={item.customer_id}>
+                      <td className="py-3 font-semibold text-white">{item.customerName}<div className="text-[10px] text-zinc-500">{item.customer_id}</div></td>
+                      <td className="py-3 font-bold text-amber-300">₹{Number(item.balance || 0).toFixed(2)}</td>
+                      <td className="py-3 text-zinc-500">{item.updated_at ? new Date(item.updated_at).toLocaleString() : '—'}</td>
+                      <td className="py-3 text-right"><button onClick={() => handleWalletAdjustment(item.customer_id)} className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300">Adjust Cash</button></td>
+                    </tr>
+                  ))}
+                  {referralData.wallets.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-zinc-500">No customer wallets have been initialized yet.</td></tr>}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="p-5 rounded-2xl bg-[#121215] border border-zinc-800">
+              <h3 className="text-sm font-bold text-white mb-3">Recent Wallet Transactions</h3>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {referralData.ledger.map((entry, index) => (
+                  <div key={entry.id || `${entry.reference_key}-${index}`} className="flex items-start justify-between gap-3 border-b border-zinc-800/70 pb-2 text-xs">
+                    <div><div className="text-zinc-200">{entry.customerName} — {entry.description}</div><div className="text-[10px] text-zinc-500">{new Date(entry.created_at).toLocaleString()} · {entry.entry_type}</div></div>
+                    <span className={Number(entry.amount) >= 0 ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold'}>{Number(entry.amount) >= 0 ? '+' : ''}₹{Number(entry.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+                {referralData.ledger.length === 0 && <p className="text-xs text-zinc-500">No wallet transactions recorded yet.</p>}
+              </div>
+            </section>
+          </div>
+        )}
+
         {/* ================= TAB 5: CUSTOMERS DIRECTORY ================= */}
         {activeAdminTab === 'customers' && (
           <div className="max-w-7xl mx-auto space-y-4">
@@ -1316,6 +1416,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                     <div>
                       <div className="text-zinc-500 text-[10px]">Lifetime Spend</div>
                       <div className="font-bold text-amber-400">₹{c.totalSpend}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 text-[10px]">Referrals Done</div>
+                      <div className="font-bold text-white">{c.referralUsage || 0}/3</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 text-[10px]">CAMPORA Cash Owned</div>
+                      <div className="font-bold text-amber-300">₹{Number(c.walletBalance || 0).toFixed(2)}</div>
                     </div>
                     <div className="col-span-2">
                       <div className="text-zinc-500 text-[10px]">College</div>
