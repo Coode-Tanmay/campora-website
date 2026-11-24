@@ -194,6 +194,13 @@ export const api = {
     });
   },
 
+  async setOrderQuote(orderId: string, amount: number): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
+    return fetchJson<{ success: boolean; order: CamporaOrder; message: string }>(`${API_BASE}/admin/orders/${encodeURIComponent(orderId)}/quote`, {
+      method: 'PATCH',
+      body: JSON.stringify({ amount }),
+    });
+  },
+
   async verifyPayment(orderId: string, action: 'confirm' | 'reject', rejectionReason?: string): Promise<{ success: boolean; order: CamporaOrder; message: string }> {
     return fetchJson<{ success: boolean; order: CamporaOrder; message: string }>(`${API_BASE}/admin/orders/${orderId}/payment`, {
       method: 'PATCH',
