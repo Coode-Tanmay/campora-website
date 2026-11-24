@@ -13,6 +13,7 @@ import { Footer } from './components/Footer';
 import { OrderFormModal } from './components/OrderFormModal';
 import { CustomerAuthModal } from './components/CustomerAuthModal';
 import { WhatsAppFloatingButton } from './components/WhatsAppFloatingButton';
+import { BuildWebsiteSection } from './components/BuildWebsiteSection';
 import { GoldSparkCursor } from './components/GoldSparkCursor';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CamporaOrder, OrderFileUploadPayload } from './types';
@@ -88,6 +89,8 @@ function AppContent() {
 
       if (combined.includes('/services') || combined.includes('services')) {
         setCurrentTab('services');
+      } else if (combined.includes('/build-website') || combined.includes('build-website')) {
+        setCurrentTab('build-website');
       } else if (combined.includes('/pricing') || combined.includes('pricing')) {
         setCurrentTab('pricing');
       } else if (combined.includes('/how-it-works')) {
@@ -245,6 +248,16 @@ function AppContent() {
               }}
             />
           </div>
+        )}
+
+        {currentTab === 'build-website' && (
+          <BuildWebsiteSection
+            onRequireLogin={() => setIsAuthModalOpen(true)}
+            onSubmitted={(order) => {
+              setOrders((previous) => [order, ...previous]);
+              showToast(`Website quote request ${order.id} saved. Continue on WhatsApp.`);
+            }}
+          />
         )}
 
         {currentTab === 'how-it-works' && (
