@@ -40,6 +40,7 @@ import {
   X,
   FileCheck,
   Download,
+  Gift,
 } from 'lucide-react';
 import { UPI_ID } from './UpiPaymentCard';
 import { ScreenshotPreviewModal } from './ScreenshotPreviewModal';
@@ -94,11 +95,12 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) => {
   const { user, logout } = useAuth();
-  const [activeAdminTab, setActiveAdminTab] = useState<'overview' | 'manage' | 'track' | 'payments' | 'customers' | 'files'>('overview');
+  const [activeAdminTab, setActiveAdminTab] = useState<'overview' | 'manage' | 'track' | 'payments' | 'customers' | 'files' | 'referrals'>('overview');
   const [orders, setOrders] = useState<CamporaOrder[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [checkoutBatches, setCheckoutBatches] = useState<any[]>([]);
+  const [referralData, setReferralData] = useState<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[] }>({ codes: [], uses: [], wallets: [], ledger: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'completed' | 'cancelled' | 'rejected' | 'refund_completed'>('all');
@@ -131,16 +133,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const fetchAdminData = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     try {
-      const [ordersRes, custRes, filesRes, batchesRes] = await Promise.all([
+      const [ordersRes, custRes, filesRes, batchesRes, referralRes] = await Promise.all([
         api.getAdminOrders(),
         api.getAdminCustomers().catch(() => ({ customers: [] })),
         api.getAdminFiles().catch(() => ({ files: [] })),
         api.getAdminCheckoutBatches().catch(() => ({ batches: [] })),
+        api.getAdminReferrals().catch(() => ({ codes: [], uses: [], wallets: [], ledger: [] })),
       ]);
       setOrders(ordersRes.orders || []);
       setCustomers(custRes.customers || []);
       setFiles(filesRes.files || []);
       setCheckoutBatches(batchesRes.batches || []);
+      setReferralData(referralRes);
       if (!selectedOrderId && ordersRes.orders?.length > 0) {
         setSelectedOrderId(ordersRes.orders[0].id);
         setAdminNoteInput(ordersRes.orders[0].adminNotes || '');
@@ -296,6 +300,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     } catch (err: any) {
       triggerToast(err.message || 'Payment rejection failed.');
     }
+  };
+
+  const handleWalletAdjustment = async (customerId: string) => {
+    const rawAmount = window.prompt('Enter positive amount to credit or negative amount to debit (₹):');
+    if (rawAmount === null) return;
+    const reason = window.prompt('Enter the audit reason for this wallet adjustment:');
+    if (!reason?.trim()) return;
+    try {
+      const result = await api.adjustCustomerWallet(customerId, Number(rawAmount), reason.trim());
+      triggerToast(`${result.message} New balance: ₹${result.balance.toFixed(2)}`);
+      const refreshed = await api.getAdminReferrals();
+      setReferralData(refreshed);
+    } catch (error: any) { triggerToast(error.message || 'Wallet adjustment failed.'); }
   };
 
   const handleVerifyCombinedPayment = async (batchId: string, action: 'confirm' | 'reject') => {
@@ -523,6 +540,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
           }`}
         >
           <Users className="w-4 h-4" /> Customers ({customers.length})
+        </button>
+
+        <button
+          id="admin-tab-referrals"
+          onClick={() => setActiveAdminTab('referrals')}
+          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-2 ${activeAdminTab === 'referrals' ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20' : 'text-zinc-400 hover:text-white'}`}
+        >
+          <Gift className="w-4 h-4" /> Referrals & Wallet
         </button>
 
         <button
@@ -1140,6 +1165,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                 <div className="text-right"><div className="text-[10px] text-zinc-500">UPI amount to verify</div><div className="text-lg font-bold text-white">₹{Number(batch.amountDue).toFixed(2)}</div><div className="text-[10px] text-amber-300">CAMPORA Cash: ₹{Number(batch.cashRedeemed).toFixed(2)}</div></div></div>
               <div className="mt-3 flex flex-wrap items-center gap-2">{batch.screenshotUrl && <a href={batch.screenshotUrl} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-xs text-white">View payment screenshot</a>}{batch.paymentStatus === 'verification_pending' && <><button onClick={() => handleVerifyCombinedPayment(batch.id,'confirm')} className="px-3 py-1.5 rounded-lg bg-emerald-500 text-black text-xs font-bold">Confirm Full Payment</button><button onClick={() => handleVerifyCombinedPayment(batch.id,'reject')} className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-semibold">Reject Proof</button></>}</div>
             </div>)}</div>}
+          </div>
+        )}
+
+        {/* ================= TAB: REFERRALS & WALLET OVERSIGHT ================= */}
+        {activeAdminTab === 'referrals' && (
+          <div className="max-w-7xl mx-auto space-y-5">
+            <div><h2 className="text-xl font-bold text-white">Referral Program & CAMPORA Cash</h2><p className="text-xs text-zinc-400 mt-1">Review referral usage, successful rewards and audited wallet balances.</p></div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="p-4 rounded-xl bg-[#121215] border border-zinc-800"><div className="text-[11px] text-zinc-400">Referral Codes</div><div className="text-2xl font-bold text-white">{referralData.codes.length}</div></div>
+              <div className="p-4 rounded-xl bg-[#121215] border border-zinc-800"><div className="text-[11px] text-zinc-400">Referred Customers</div><div className="text-2xl font-bold text-white">{referralData.uses.length}</div></div>
+              <div className="p-4 rounded-xl bg-[#121215] border border-zinc-800"><div className="text-[11px] text-zinc-400">Wallets</div><div className="text-2xl font-bold text-amber-300">{referralData.wallets.length}</div></div>
+            </div>
+            <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto"><h3 className="text-sm font-bold text-white mb-3">Referral Usage & Reward Status</h3>
+              {referralData.uses.length === 0 ? <p className="text-xs text-zinc-500">No referral code has been used yet.</p> : <table className="w-full text-xs"><thead><tr className="text-zinc-500 text-left border-b border-zinc-800"><th className="py-2">Referrer</th><th>Referred Customer</th><th>Code</th><th>Qualifying Order</th><th>Reward Status</th><th>Credited</th></tr></thead><tbody>{referralData.uses.map((use:any)=><tr key={use.referred_customer_id} className="border-b border-zinc-800/60"><td className="py-2 text-white">{use.referrerName}</td><td>{use.referredName}</td><td className="font-mono text-amber-300">{use.code}</td><td>{use.qualifying_order_id || '—'}</td><td>{use.reward_status}</td><td>{use.credited_at ? new Date(use.credited_at).toLocaleString() : '—'}</td></tr>)}</tbody></table>}
+            </div>
+            <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto"><h3 className="text-sm font-bold text-white mb-3">Customer Wallets & Adjustments</h3>
+              {referralData.wallets.length === 0 ? <p className="text-xs text-zinc-500">No customer wallets yet.</p> : <table className="w-full text-xs"><thead><tr className="text-zinc-500 text-left border-b border-zinc-800"><th className="py-2">Customer</th><th>Customer ID</th><th>Balance</th><th>Action</th></tr></thead><tbody>{referralData.wallets.map((wallet:any)=><tr key={wallet.customer_id} className="border-b border-zinc-800/60"><td className="py-2 text-white">{wallet.customerName}</td><td className="font-mono text-zinc-500">{wallet.customer_id}</td><td className="font-bold text-amber-300">₹{Number(wallet.balance).toFixed(2)}</td><td><button onClick={()=>handleWalletAdjustment(wallet.customer_id)} className="px-2.5 py-1 rounded bg-zinc-800 border border-zinc-700 text-zinc-200">Adjust with reason</button></td></tr>)}</tbody></table>}
+            </div>
+            <div className="p-5 rounded-2xl bg-[#121215] border border-zinc-800 overflow-x-auto"><h3 className="text-sm font-bold text-white mb-3">Latest Wallet Ledger</h3>
+              {referralData.ledger.length === 0 ? <p className="text-xs text-zinc-500">No wallet transactions yet.</p> : <table className="w-full text-xs"><thead><tr className="text-zinc-500 text-left border-b border-zinc-800"><th className="py-2">Customer</th><th>Type</th><th>Amount</th><th>Reference</th><th>Description</th></tr></thead><tbody>{referralData.ledger.slice(0,100).map((entry:any,i:number)=><tr key={`${entry.customer_id}-${entry.reference_key}-${i}`} className="border-b border-zinc-800/60"><td className="py-2">{entry.customerName}</td><td>{entry.entry_type}</td><td className={Number(entry.amount)>=0?'text-emerald-300':'text-red-300'}>₹{Number(entry.amount).toFixed(2)}</td><td className="font-mono">{entry.reference_key}</td><td>{entry.description}</td></tr>)}</tbody></table>}
+            </div>
           </div>
         )}
 
