@@ -54,16 +54,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
   const [razorpayEnabled, setRazorpayEnabled] = useState(false);
   const [startingPaymentFor, setStartingPaymentFor] = useState<string | null>(null);
 
-  const fetchOrders = async () => {
-    setIsLoading(true);
-    setError(null);
+  const fetchOrders = async (showLoading = true) => {
+    if (showLoading) {
+      setIsLoading(true);
+      setError(null);
+    }
     try {
       const res = await api.getCustomerOrders();
       setOrders(res.orders || []);
     } catch (err: any) {
-      setError(err.message || 'Failed to load your orders.');
+      if (showLoading) setError(err.message || 'Failed to load your orders.');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
 
@@ -73,10 +75,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
     // Keep customer order cards and deliverables in sync with admin verification
     // and upload actions without requiring a manual browser refresh.
     const refreshCustomerOrders = () => {
-      if (document.visibilityState === 'visible') void fetchOrders();
+      if (document.visibilityState === 'visible') void fetchOrders(false);
     };
     const interval = window.setInterval(refreshCustomerOrders, 10000);
-    const handleFocus = () => { void fetchOrders(); };
+    const handleFocus = () => { void fetchOrders(false); };
     window.addEventListener('focus', handleFocus);
     return () => {
       window.clearInterval(interval);
