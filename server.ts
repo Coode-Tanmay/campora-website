@@ -2125,7 +2125,7 @@ app.patch('/api/admin/checkout-batches/:id/payment', requireAdmin, async (req: R
     cashRemaining = Math.max(0, Math.round((cashRemaining - cashShare) * 100) / 100);
     const upiPaidForOrder = Math.max(0, Math.round((gross - cashShare) * 100) / 100);
     return {
-      ...order, paymentStatus: 'paid' as const,
+      ...order, paymentStatus: 'paid' as const, camporaCashRedeemed: cashShare,
       paymentDetails: { ...(order.paymentDetails || { upiId: 'tanmayvbhagat-1@oksbi' }), upiId: 'tanmayvbhagat-1@oksbi', amountPaid: upiPaidForOrder, utrNumber: batch.utr_number || undefined, screenshotName: batch.screenshot_name || undefined, verifiedAt: now, verifiedBy: req.user?.name || 'CAMPORA Admin' },
       activityHistory: [...(order.activityHistory || []), { id: `act-${randomBytes(4).toString('hex')}`, action: 'combined_payment_verified', description: `Combined payment ${batch.id} verified. UPI allocated ₹${upiPaidForOrder.toFixed(2)} and CAMPORA Cash allocated ₹${cashShare.toFixed(2)}.`, actor: req.user?.name || 'CAMPORA Admin', timestamp: now }],
       timeline: (order.timeline || []).map((step) => step.id === 't3' || step.title.toLowerCase().includes('payment') ? { ...step, title: 'Payment Confirmed', description: `Payment verified as part of combined checkout ${batch.id}.`, status: 'completed' as const, timestamp: now } : step),
@@ -2506,6 +2506,60 @@ app.patch('/api/admin/orders/:id/payment', requireAdmin, async (req: RequestWith
   }
 
   res.status(400).json({ error: 'Invalid payment verification action.' });
+});
+
+// Admin confirms that the actual payment refund has been processed. Any CAMPORA Cash used on this order is restored once.
+app.patch('/api/admin/orders/:id/refund', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const orderIndex = ordersStore.findIndex((item) => item.id.toLowerCase() === req.params.id.toLowerCase());
+  if (orderIndex === -1) return res.status(404).json({ error: 'Order not found.' });
+  const order = ordersStore[orderIndex];
+  if (order.refundStatus === 'refunded') {
+    return res.json({ success: true, order: await hydrateOrderForResponse(order), message: 'This refund was already recorded.' });
+  }
+  if (order.refundStatus !== 'requested' && order.refundStatus !== 'processing') {
+    return res.status(409).json({ error: 'This order does not have a pending refund request.' });
+  }
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+  if (!reason) return res.status(400).json({ error: 'Confirm the actual payment refund and provide an audit reason.' });
+
+  const cashToRestore = Math.round(Number(order.camporaCashRedeemed || 0) * 100) / 100;
+  if (cashToRestore > 0) {
+    const { error: walletError } = await supabase.rpc('campora_wallet_apply_entry', {
+      p_customer_id: order.customerId,
+      p_entry_type: 'refund_reversal',
+      p_amount: cashToRestore,
+      p_reference_key: `refund:${order.id}`,
+      p_description: `Restored ₹${cashToRestore.toFixed(2)} CAMPORA Cash after refund of order ${order.id}. ${reason}`,
+    });
+    if (walletError) return res.status(409).json({ error: 'CAMPORA Cash could not be restored. The refund status was not changed; please retry or inspect the wallet ledger.' });
+  }
+
+  const now = new Date().toISOString();
+  const updatedOrder: CamporaOrder = {
+    ...order,
+    refundStatus: 'refunded',
+    refundedAt: now,
+    activityHistory: [...(order.activityHistory || []), {
+      id: `act-${randomBytes(5).toString('hex')}`,
+      action: 'refund_completed',
+      description: `Admin confirmed the actual payment refund. ${cashToRestore > 0 ? `₹${cashToRestore.toFixed(2)} CAMPORA Cash was restored.` : 'No CAMPORA Cash restoration was due.'} Reason: ${reason}`,
+      actor: req.user?.name || 'CAMPORA Admin',
+      timestamp: now,
+    }],
+    updatedAt: now,
+  };
+  ordersStore[orderIndex] = updatedOrder;
+  try {
+    await persistState();
+  } catch (error) {
+    ordersStore[orderIndex] = order;
+    throw error;
+  }
+  res.json({
+    success: true,
+    order: await hydrateOrderForResponse(updatedOrder),
+    message: cashToRestore > 0 ? `Refund recorded and ₹${cashToRestore.toFixed(2)} CAMPORA Cash restored.` : 'Refund recorded successfully.',
+  });
 });
 
 // Admin Upload Completed Deliverable
