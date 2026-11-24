@@ -136,7 +136,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({ onBackToHome, on
     }
     try {
       const res = await api.getCustomerOrders();
-      setOrders(res.orders || []);
+      setOrders((res.orders || []).filter((order) => order.status !== 'cancelled'));
     } catch (err: any) {
       if (showLoading) setError(err.message || 'Failed to load your orders.');
     } finally {
