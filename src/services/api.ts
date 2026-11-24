@@ -90,7 +90,7 @@ export const api = {
     return res;
   },
 
-  async customerLogin(data: { email: string; password?: string; name?: string; whatsapp?: string; college?: string }): Promise<{ success: boolean; user?: AuthUser; token?: string; verificationRequired?: boolean; error?: string }> {
+  async customerLogin(data: { email: string; password?: string; name?: string; whatsapp?: string; college?: string; referralCode?: string }): Promise<{ success: boolean; user?: AuthUser; token?: string; verificationRequired?: boolean; error?: string }> {
     const res = await fetchJson<{ success: boolean; user?: AuthUser; token?: string; verificationRequired?: boolean; error?: string }>(`${API_BASE}/auth/customer/login`, {
       method: 'POST',
       body: JSON.stringify(data),
