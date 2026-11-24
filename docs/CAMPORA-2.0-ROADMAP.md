@@ -23,7 +23,7 @@ This roadmap prioritizes reliability and customer trust before growth features. 
 ## Phase 1 — Customer experience
 
 1. **Notification center:** persistent in-app notifications for order created, requirements approved, payment proof received, payment verified/rejected, work started, and delivery completed. Notifications must be scoped to the signed-in customer and link to the relevant order.
-2. **Order conversation/support:** a per-order message thread between customer and admin, with unread counts and server-side ownership checks.
+2. **WhatsApp support:** admins communicate directly with customers through WhatsApp; keep order communication outside the app.
 3. **Better order timeline:** clear timestamps, status explanations, deadline details, and visible next action.
 4. **Reviews:** allow one review per completed order; moderate before public display.
 
@@ -32,14 +32,13 @@ This roadmap prioritizes reliability and customer trust before growth features. 
 1. **Analytics dashboard:** counts and revenue calculated from verified orders, date filters, popular services, pending proof, turnaround time, and export.
 2. **Audit history:** append-only record of important admin actions (payment confirmation/rejection, status changes, file uploads, cancellations/refunds).
 3. **Operational safeguards:** confirmation dialogs, duplicate-action prevention, and clear error states.
-4. **Customer support inbox:** filter conversations by unread, order, and customer.
+4. **WhatsApp contact workflow:** keep the existing per-order WhatsApp contact action available to administrators.
 
 ## Phase 3 — Growth features
 
 1. **Portfolio/gallery:** only approved sample work and testimonials, with customer permission.
 2. **Referral programme:** unique codes, server-calculated rewards, abuse controls, and an auditable ledger.
 3. **Loyalty credits:** only after a transaction ledger and refund/reversal rules are in place.
-4. **AI assistant/document checker:** begin with a limited FAQ and file/requirement completeness checks. Use free quotas only where available; never send private customer files to an external AI service without clear consent.
 
 ## Phase 4 — Scale and mobile
 
@@ -52,7 +51,7 @@ This roadmap prioritizes reliability and customer trust before growth features. 
 
 - Keep direct UPI/manual verification; do not enable a paid payment gateway by default.
 - Do not make private storage public to simplify downloads.
-- Do not promise email, SMS, AI, or push notifications until the provider and delivery path are configured and tested.
+- Do not promise email, SMS, or push notifications until the provider and delivery path are configured and tested.
 - Prefer built-in database queries and existing infrastructure before introducing new paid services.
 - Test using dedicated test accounts/orders, never real customer orders.
 
