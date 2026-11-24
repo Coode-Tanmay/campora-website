@@ -139,7 +139,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Database-backed application state. The server keeps a short-lived in-process cache,
 // but every mutation is persisted to Supabase before the API reports success.
 let ordersStore: CamporaOrder[] = [];
-interface StoredUser extends AuthUser { passwordHash?: string; emailVerified?: boolean; emailVerificationTokenHash?: string; emailVerificationExpiresAt?: number; passwordResetTokenHash?: string; passwordResetExpiresAt?: number; }
+interface StoredUser extends AuthUser { notificationReadIds?: string[]; passwordHash?: string; emailVerified?: boolean; emailVerificationTokenHash?: string; emailVerificationExpiresAt?: number; passwordResetTokenHash?: string; passwordResetExpiresAt?: number; }
 let usersStore: StoredUser[] = [];
 let stateWriteQueue: Promise<unknown> = Promise.resolve();
 
@@ -1416,6 +1416,81 @@ app.get('/api/customer/orders', requireAuth, async (req: RequestWithUser, res: R
     }));
 
   res.json({ orders: userOrders });
+});
+
+// Customer notification inbox: derive events from owned orders and persist read receipts
+// on the existing customer record. Never accept arbitrary order IDs from the client.
+const CUSTOMER_NOTIFICATION_ACTIONS: Record<string, string> = {
+  approved: 'Requirements approved',
+  rejected: 'Order rejected',
+  cancelled: 'Order cancelled',
+  in_progress: 'Work started',
+  review: 'Work in review',
+  completed: 'Work completed',
+  payment_verified: 'Payment verified',
+  payment_rejected: 'Payment needs attention',
+  payment_proof_submitted: 'Payment proof received',
+  customer_cancelled_refund_requested: 'Refund requested',
+  customer_cancelled: 'Order cancelled',
+};
+function getCustomerNotifications(customerId: string) {
+  return ordersStore.filter(order => order.customerId === customerId).flatMap(order => {
+    const events = (order.activityHistory || [])
+      .filter(event => Boolean(CUSTOMER_NOTIFICATION_ACTIONS[event.action]))
+      .map(event => ({
+        id: `${order.id}:${event.id}`,
+        orderId: order.id,
+        title: CUSTOMER_NOTIFICATION_ACTIONS[event.action],
+        message: event.description.slice(0, 500),
+        timestamp: event.timestamp,
+      }));
+    // Every order has a stable initial notification, including legacy orders.
+    events.push({
+      id: `${order.id}:created`,
+      orderId: order.id,
+      title: 'Order placed',
+      message: 'Your order has been received by CAMPORA.',
+      timestamp: order.createdAt,
+    });
+    // Some older orders have no activity history for completion.
+    if (order.status === 'completed' && !events.some(event => event.title === 'Work completed')) {
+      events.push({
+        id: `${order.id}:delivered`,
+        orderId: order.id,
+        title: 'Work completed',
+        message: 'Your order is completed. Downloads are available after payment verification.',
+        timestamp: order.updatedAt,
+      });
+    }
+    return events;
+  }).sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 100);
+}
+app.get('/api/customer/notifications', requireAuth, (req: RequestWithUser, res: Response) => {
+  if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const user = usersStore.find(u => u.id === req.user!.id);
+  if (!user) return res.status(401).json({ error: 'Account not found.' });
+  const readIds = new Set(user.notificationReadIds || []);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ notifications: getCustomerNotifications(user.id).map(n => ({ ...n, read: readIds.has(n.id) })) });
+});
+app.post('/api/customer/notifications/read', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user?.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const user = usersStore.find(u => u.id === req.user!.id);
+  if (!user) return res.status(401).json({ error: 'Account not found.' });
+  const validIds = new Set(getCustomerNotifications(user.id).map(n => n.id));
+  const submitted = req.body?.ids;
+  if (!Array.isArray(submitted) || submitted.length > 100 || submitted.some(id => typeof id !== 'string')) {
+    return res.status(400).json({ error: 'Invalid notification selection.' });
+  }
+  const oldIds = user.notificationReadIds || [];
+  user.notificationReadIds = [...new Set([...oldIds, ...submitted.filter(id => validIds.has(id))])].slice(-500);
+  try {
+    await persistState();
+  } catch (error) {
+    user.notificationReadIds = oldIds;
+    throw error;
+  }
+  res.json({ success: true });
 });
 
 // Razorpay capability is intentionally disabled until explicitly enabled in Render.
