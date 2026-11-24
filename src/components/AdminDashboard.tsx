@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { OrderSupportChat } from './OrderSupportChat';
 import { CamporaOrder, OrderStatus, PaymentStatus, DeliverableFile, TimelineStep } from '../types';
 import {
   Shield,
@@ -854,6 +855,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                   >
                     <MessageCircle className="w-3.5 h-3.5" /> Message Customer on WhatsApp
                   </a>
+
+                  <OrderSupportChat orderId={activeOrder.id} admin />
 
                   {/* Order Workflow Action Buttons */}
                   <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 space-y-3">
