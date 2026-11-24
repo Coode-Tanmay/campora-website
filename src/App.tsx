@@ -217,7 +217,6 @@ function AppContent() {
             <WhyUs />
             <ServicesSection
               onSelectService={(serviceId) => handleOpenOrderModal(serviceId)}
-              onOpenCustomQuote={() => handleOpenOrderModal()}
             />
             <HowItWorks onStartOrder={() => handleOpenOrderModal()} />
             <ReferralBanner
@@ -238,7 +237,6 @@ function AppContent() {
           <div className="pt-4">
             <ServicesSection
               onSelectService={(serviceId) => handleOpenOrderModal(serviceId)}
-              onOpenCustomQuote={() => handleOpenOrderModal()}
             />
             <CollegeTemplateFeature onOrderWithTemplate={() => handleOpenOrderModal()} />
             <ReferralBanner
