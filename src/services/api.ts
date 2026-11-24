@@ -174,6 +174,7 @@ export const api = {
   async createCombinedCheckout(cashToRedeem: number): Promise<{ success: boolean; checkout: { id: string; orderIds: string[]; subtotal: number; cashRedeemed: number; amountDue: number } }> {
     return fetchJson(`${API_BASE}/customer/cart/checkout`, { method: 'POST', body: JSON.stringify({ cashToRedeem }) });
   },
+  async getActiveCombinedCheckout(): Promise<{ checkout: { id: string; orderIds: string[]; subtotal: number; cashRedeemed: number; amountDue: number; paymentStatus: string; utrNumber?: string } | null }> { return fetchJson(`${API_BASE}/customer/cart/checkout/active`); },
   async submitCombinedPayment(checkoutId: string, payload: { utrNumber?: string; screenshotUrl: string; screenshotName?: string }): Promise<{ success: boolean; message: string }> {
     return fetchJson(`${API_BASE}/customer/cart/checkout/${encodeURIComponent(checkoutId)}/payment`, { method: 'POST', body: JSON.stringify(payload) });
   },
