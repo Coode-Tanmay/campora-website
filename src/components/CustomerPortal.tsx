@@ -45,10 +45,10 @@ const loadRazorpayCheckout = (): Promise<boolean> => new Promise((resolve) => {
 type CustomerOrderFilter = 'active' | 'completed' | 'all' | 'cancelled';
 
 const getCustomerDeadlineDurationMs = (deadline: string): number => {
-  if (/1\\s*[-–]\\s*3\\s*hours?/i.test(deadline) || /1\\s*[-–]\\s*3\\s*hrs?/i.test(deadline)) return 3 * 60 * 60 * 1000;
-  if (/12\\s*[-–]\\s*24/i.test(deadline)) return 24 * 60 * 60 * 1000;
-  if (/24\\s*[-–]\\s*48/i.test(deadline)) return 48 * 60 * 60 * 1000;
-  if (/3\\s*\\+\\s*days?/i.test(deadline)) return 72 * 60 * 60 * 1000;
+  if (/1\s*[-–]\s*3\s*hours?/i.test(deadline) || /1\s*[-–]\s*3\s*hrs?/i.test(deadline)) return 3 * 60 * 60 * 1000;
+  if (/12\s*[-–]\s*24/i.test(deadline)) return 24 * 60 * 60 * 1000;
+  if (/24\s*[-–]\s*48/i.test(deadline)) return 48 * 60 * 60 * 1000;
+  if (/3\s*\\+\s*days?/i.test(deadline)) return 72 * 60 * 60 * 1000;
   return 24 * 60 * 60 * 1000;
 };
 
