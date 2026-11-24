@@ -915,7 +915,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                       </div>
                       <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
                         <label className="flex-1 text-xs text-zinc-300">
-                          Final price (INR)
+                          {activeOrder.urgentSurchargePercent === 30 ? 'Base quote before 30% urgent surcharge (INR)' : 'Final price (INR)'}
                           <div className="mt-1 flex items-center rounded-lg border border-zinc-700 bg-zinc-950 px-3">
                             <span className="text-amber-400 font-bold">₹</span>
                             <input type="number" min="0.01" step="0.01" value={quoteAmountInput} onChange={(event) => setQuoteAmountInput(event.target.value)} disabled={activeOrder.paymentStatus === 'paid' || ['cancelled', 'rejected', 'completed'].includes(activeOrder.status)} placeholder="Enter agreed amount" className="w-full bg-transparent px-2 py-2 text-sm text-white outline-none disabled:opacity-50" />
