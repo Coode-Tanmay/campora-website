@@ -2007,11 +2007,21 @@ app.post('/api/customer/cart/checkout', requireAuth, async (req: RequestWithUser
   await saveCustomerCartItems(req.user!.id, []);
   res.status(201).json({ success: true, checkout: { id: batchId, orderIds: selected.map((order) => order.id), subtotal, cashRedeemed: cashRequested, amountDue } });
 });
+app.get('/api/customer/cart/checkout/active', requireAuth, async (req: RequestWithUser, res: Response) => {
+  if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
+  const { data, error } = await supabase.from('campora_checkout_batches').select('id,order_ids,subtotal,cash_redeemed,amount_due,payment_status,utr_number,submitted_at')
+    .eq('customer_id', req.user!.id).in('payment_status', ['pending','verification_pending','rejected']).order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) return res.status(503).json({ error: 'Unable to load your active checkout.' });
+  if (!data) return res.json({ checkout: null });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ checkout: { id: data.id, orderIds: data.order_ids, subtotal: Number(data.subtotal), cashRedeemed: Number(data.cash_redeemed), amountDue: Number(data.amount_due), paymentStatus: data.payment_status, utrNumber: data.utr_number, submittedAt: data.submitted_at } });
+});
+
 app.post('/api/customer/cart/checkout/:id/payment', paymentProofLimiter, requireAuth, express.json({ limit: '1mb' }), async (req: RequestWithUser, res: Response) => {
   if (req.user!.role !== 'customer') return res.status(403).json({ error: 'Customer account required.' });
   const { data: batch, error } = await supabase.from('campora_checkout_batches').select('*').eq('id', req.params.id).eq('customer_id', req.user!.id).maybeSingle();
   if (error || !batch) return res.status(404).json({ error: 'Combined checkout not found.' });
-  if (batch.payment_status !== 'pending') return res.status(409).json({ error: 'This checkout is no longer awaiting payment proof.' });
+  if (!['pending','rejected'].includes(batch.payment_status)) return res.status(409).json({ error: 'This checkout is no longer awaiting payment proof.' });
   const cleanUtr = typeof req.body?.utrNumber === 'string' ? req.body.utrNumber.trim().replace(/\\s+/g, '') : '';
   if (cleanUtr && !/^[A-Za-z0-9-]{8,32}$/.test(cleanUtr)) return res.status(400).json({ error: 'UTR must be 8–32 letters, numbers or hyphens, or left blank.' });
   let screenshotPath = '';
@@ -2024,7 +2034,7 @@ app.post('/api/customer/cart/checkout/:id/payment', paymentProofLimiter, require
     payment_status: 'verification_pending', utr_number: cleanUtr || null, screenshot_path: screenshotPath,
     screenshot_name: typeof req.body?.screenshotName === 'string' ? req.body.screenshotName.slice(0,180) : 'Combined_Payment.png',
     submitted_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-  }).eq('id', batch.id).eq('payment_status', 'pending');
+  }).eq('id', batch.id).in('payment_status', ['pending','rejected']);
   if (updateError) { await removePrivateFiles([screenshotPath]); return res.status(503).json({ error: 'Payment proof could not be saved. Please try again.' }); }
   res.json({ success: true, message: 'Combined payment proof submitted. CAMPORA Admin will verify the payment manually.' });
 });
@@ -2082,16 +2092,20 @@ app.patch('/api/admin/checkout-batches/:id/payment', requireAdmin, async (req: R
     timeline: (order.timeline || []).map((step) => step.id === 't3' || step.title.toLowerCase().includes('payment') ? { ...step, title: 'Payment Confirmed', description: `Payment verified as part of combined checkout ${batch.id}.`, status: 'completed' as const, timestamp: now } : step),
     updatedAt: now,
   }));
+  const { error: batchUpdateError } = await supabase.from('campora_checkout_batches').update({ payment_status: 'paid', verified_at: now, verified_by: req.user?.name || 'CAMPORA Admin', updated_at: now }).eq('id', batch.id).eq('payment_status', 'verification_pending');
+  if (batchUpdateError) {
+    if (debit > 0) await supabase.rpc('campora_wallet_apply_entry', { p_customer_id: batch.customer_id, p_entry_type: 'admin_adjustment', p_amount: debit, p_reference_key: `${batch.id}:rollback`, p_description: `Rollback of failed combined checkout ${batch.id}` });
+    return res.status(503).json({ error: 'Checkout receipt could not be finalized. Wallet redemption was reversed; please retry after refreshing.' });
+  }
   const oldOrders = ordersStore;
   const updateById = new Map(updated.map((order) => [order.id, order]));
   ordersStore = ordersStore.map((order) => updateById.get(order.id) || order);
   try { await persistState(); } catch (persistError) {
     ordersStore = oldOrders;
+    await supabase.from('campora_checkout_batches').update({ payment_status: 'verification_pending', verified_at: null, verified_by: null, updated_at: new Date().toISOString() }).eq('id', batch.id);
     if (debit > 0) await supabase.rpc('campora_wallet_apply_entry', { p_customer_id: batch.customer_id, p_entry_type: 'admin_adjustment', p_amount: debit, p_reference_key: `${batch.id}:rollback`, p_description: `Rollback of failed combined checkout ${batch.id}` });
     throw persistError;
   }
-  const { error: batchUpdateError } = await supabase.from('campora_checkout_batches').update({ payment_status: 'paid', verified_at: now, verified_by: req.user?.name || 'CAMPORA Admin', updated_at: now }).eq('id', batch.id).eq('payment_status', 'verification_pending');
-  if (batchUpdateError) return res.status(503).json({ error: 'Orders were updated but checkout receipt status needs admin review. Please inspect this batch before retrying.' });
   for (const order of updated) void sendPaymentUpdateEmail(order.customerEmail, order.customerName, order.id, 'confirmed');
   res.json({ success: true, message: `Combined payment verified. ${updated.length} orders are now paid.`, orders: await Promise.all(updated.map(hydrateOrderForResponse)) });
 });
