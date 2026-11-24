@@ -163,6 +163,7 @@ export interface CamporaOrder {
   paymentGateway?: PaymentGatewayDetails;
   refundStatus?: RefundStatus;
   refundRequestedAt?: string;
+  camporaCashRedeemed?: number;
   refundedAt?: string;
   
   // Status Tracking
