@@ -100,7 +100,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   const [customers, setCustomers] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [checkoutBatches, setCheckoutBatches] = useState<any[]>([]);
-  const [referralData, setReferralData] = useState<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[] }>({ codes: [], uses: [], wallets: [], ledger: [] });
+  const [referralData, setReferralData] = useState<{ codes: any[]; uses: any[]; wallets: any[]; ledger: any[]; audit: any[] }>({ codes: [], uses: [], wallets: [], ledger: [], audit: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [manageOrdersTab, setManageOrdersTab] = useState<'all' | 'live' | 'in_progress' | 'delayed' | 'completed' | 'cancelled' | 'rejected' | 'refund_completed'>('all');
@@ -138,7 +138,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
         api.getAdminCustomers().catch(() => ({ customers: [] })),
         api.getAdminFiles().catch(() => ({ files: [] })),
         api.getAdminCheckoutBatches().catch(() => ({ batches: [] })),
-        api.getAdminReferrals().catch(() => ({ codes: [], uses: [], wallets: [], ledger: [] })),
+        api.getAdminReferrals().catch(() => ({ codes: [], uses: [], wallets: [], ledger: [], audit: [] })),
       ]);
       setOrders(ordersRes.orders || []);
       setCustomers(custRes.customers || []);
@@ -312,6 +312,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
       triggerToast(`${result.message} New balance: ₹${result.balance.toFixed(2)}`);
       const refreshed = await api.getAdminReferrals();
       setReferralData(refreshed);
+      await fetchAdminData(false);
     } catch (error: any) { triggerToast(error.message || 'Wallet adjustment failed.'); }
   };
 
@@ -1374,6 +1375,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                   {referralData.wallets.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-zinc-500">No customer wallets have been initialized yet.</td></tr>}
                 </tbody>
               </table>
+            </section>
+
+            <section className="p-5 rounded-2xl bg-[#121215] border border-zinc-800">
+              <h3 className="text-sm font-bold text-white mb-3">Referral Count Audit History</h3>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {referralData.audit.map((entry) => (
+                  <div key={entry.id} className="border-b border-zinc-800/70 pb-2 text-xs">
+                    <div className="flex flex-wrap justify-between gap-2"><span className="font-mono text-amber-300">{entry.referral_code}</span><span className="text-zinc-400">{entry.old_usage_count} → {entry.new_usage_count} uses</span></div>
+                    <div className="text-zinc-200 mt-1">{entry.reason}</div>
+                    <div className="text-[10px] text-zinc-500 mt-1">{entry.admin_name} · {new Date(entry.created_at).toLocaleString()}</div>
+                  </div>
+                ))}
+                {referralData.audit.length === 0 && <p className="text-xs text-zinc-500">No referral-count corrections recorded.</p>}
+              </div>
             </section>
 
             <section className="p-5 rounded-2xl bg-[#121215] border border-zinc-800">
