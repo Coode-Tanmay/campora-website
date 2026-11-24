@@ -139,7 +139,7 @@ export const SERVICES_DATA: ServiceItem[] = [
     supportsTemplate: true,
     popular: true,
     tag: 'RECOMMENDED',
-    description: 'Comprehensive industry internship report including certificates, weekly logs, and project findings.',
+    description: 'Comprehensive report based on the student’s actual internship work, learning outcomes, project findings and verified activity records.',
     features: [
       'Up to 20 Formatted Pages Included',
       'Company Overview & Architecture',
@@ -246,11 +246,12 @@ export const SERVICES_DATA: ServiceItem[] = [
     tag: 'MOST POPULAR',
     description: 'Support to genuinely complete internship tasks, prepare project deliverables and documentation, and get ready for the viva. Any completion certificate must be issued by the authorized internship provider after actual completion.',
     features: [
-      'Comprehensive Formatted Project Report',
+      'Project report based on work genuinely completed during the internship',
       'Viva-Ready Presentation Deck (15-20 Slides)',
-      'Weekly Activity Log Sheets & Timesheets',
+      'Activity log templates completed from genuine internship tasks',
       'Top 25 Viva Voce Questions & Answers Guide',
-      'Priority 6 AM – 12 AM WhatsApp Assistance'
+      'Priority 6 AM – 12 AM WhatsApp Assistance',
+      'Official completion certificate must come from the authorized internship provider after actual completion'
     ],
   },
   {
