@@ -671,7 +671,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                   {([
                     { id: 'all', label: 'All Orders' },
                     { id: 'live', label: 'Live Orders' },
-                    { id: 'in_progress', label: 'In Progress' },
+                    { id: 'in_progress', label: 'Running Orders' },
                     { id: 'delayed', label: 'Delayed Orders' },
                     { id: 'completed', label: 'Completed Orders' },
                     { id: 'cancelled', label: 'Cancelled Orders' },
