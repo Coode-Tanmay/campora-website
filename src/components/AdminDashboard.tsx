@@ -121,6 +121,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
 
   // Admin notes
   const [adminNoteInput, setAdminNoteInput] = useState('');
+  const [quoteAmountInput, setQuoteAmountInput] = useState('');
+  const [isSavingQuote, setIsSavingQuote] = useState(false);
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -173,8 +175,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
   useEffect(() => {
     if (activeOrder) {
       setAdminNoteInput(activeOrder.adminNotes || '');
+      setQuoteAmountInput(String(activeOrder.finalPrice || activeOrder.total || ''));
     }
-  }, [selectedOrderId]);
+  }, [selectedOrderId, activeOrder?.finalPrice, activeOrder?.total]);
 
   // Overview metrics
   const totalOrders = orders.length;
@@ -248,6 +251,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
       triggerToast(`Order ${activeOrder.id} moved to Quality Review.`);
     } catch (err: any) {
       triggerToast(err.message || 'Failed to update status.');
+    }
+  };
+
+  const handleSaveQuote = async () => {
+    if (!activeOrder) return;
+    const amount = Number(quoteAmountInput);
+    if (!Number.isFinite(amount) || amount <= 0) { triggerToast('Enter a valid quote amount greater than ₹0.'); return; }
+    setIsSavingQuote(true);
+    try {
+      const result = await api.setOrderQuote(activeOrder.id, amount);
+      setOrders((prev) => prev.map((order) => order.id === activeOrder.id ? result.order : order));
+      triggerToast(result.message || 'Quote saved. Customer can now pay from My Orders.');
+    } catch (error: any) {
+      triggerToast(error.message || 'Could not save quote.');
+    } finally {
+      setIsSavingQuote(false);
     }
   };
 
@@ -822,6 +841,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
                   </div>
 
                   <div className="p-4 rounded-xl bg-zinc-900/70 border border-zinc-800 space-y-2">
+                  {(activeOrder.requiresReview || activeOrder.quoteStatus !== 'not_required' || activeOrder.paymentStatus === 'awaiting_quote') && (
+                    <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/30 space-y-3">
+                      <div>
+                        <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Custom Quote Pricing</div>
+                        <p className="text-[11px] text-zinc-400 mt-1">Review the request and discuss it with the customer on WhatsApp. Set the final amount here to unlock payment in the customer's My Orders page.</p>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                        <label className="flex-1 text-xs text-zinc-300">
+                          Final price (INR)
+                          <div className="mt-1 flex items-center rounded-lg border border-zinc-700 bg-zinc-950 px-3">
+                            <span className="text-amber-400 font-bold">₹</span>
+                            <input type="number" min="0.01" step="0.01" value={quoteAmountInput} onChange={(event) => setQuoteAmountInput(event.target.value)} disabled={activeOrder.paymentStatus === 'paid' || ['cancelled', 'rejected', 'completed'].includes(activeOrder.status)} placeholder="Enter agreed amount" className="w-full bg-transparent px-2 py-2 text-sm text-white outline-none disabled:opacity-50" />
+                          </div>
+                        </label>
+                        <button type="button" onClick={handleSaveQuote} disabled={isSavingQuote || activeOrder.paymentStatus === 'paid' || ['cancelled', 'rejected', 'completed'].includes(activeOrder.status)} className="px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black text-xs font-bold">{isSavingQuote ? 'Saving…' : activeOrder.quoteStatus === 'sent' ? 'Update Quote & Price' : 'Save Quote & Enable Payment'}</button>
+                      </div>
+                      {activeOrder.quoteStatus === 'sent' && <p className="text-[11px] text-emerald-300">Quote saved: ₹{activeOrder.finalPrice || activeOrder.total}. Customer can pay from My Orders.</p>}
+                    </div>
+                  )}
+
                     <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Payment Submission</div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                       <div>
