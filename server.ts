@@ -2624,13 +2624,14 @@ app.patch('/api/admin/orders/:id/notes', requireAdmin, async (req: RequestWithUs
 
 // Admin referral and wallet oversight. All adjustments are ledger-backed and require an audit reason.
 app.get('/api/admin/referrals', requireAdmin, async (_req: RequestWithUser, res: Response) => {
-  const [{ data: codes, error: codeError }, { data: uses, error: usesError }, { data: wallets, error: walletError }, { data: ledger, error: ledgerError }] = await Promise.all([
+  const [{ data: codes, error: codeError }, { data: uses, error: usesError }, { data: wallets, error: walletError }, { data: ledger, error: ledgerError }, { data: audit, error: auditError }] = await Promise.all([
     supabase.from('campora_referral_codes').select('code,referrer_id,usage_count,max_usage,created_at').order('created_at', { ascending: false }),
     supabase.from('campora_referral_uses').select('referred_customer_id,code,referrer_id,qualifying_order_id,reward_status,credited_at,created_at').order('created_at', { ascending: false }),
     supabase.from('campora_wallets').select('customer_id,balance,updated_at').order('updated_at', { ascending: false }),
-    supabase.from('campora_wallet_ledger').select('customer_id,entry_type,amount,reference_key,description,created_at').order('created_at', { ascending: false }).limit(200),
+    supabase.from('campora_wallet_ledger').select('id,customer_id,entry_type,amount,reference_key,description,created_at').order('created_at', { ascending: false }).limit(200),
+    supabase.from('campora_referral_admin_audit').select('id,referral_code,referrer_id,old_usage_count,new_usage_count,reason,admin_id,admin_name,created_at').order('created_at', { ascending: false }).limit(100),
   ]);
-  if (codeError || usesError || walletError || ledgerError) return res.status(503).json({ error: 'Referral records are temporarily unavailable.' });
+  if (codeError || usesError || walletError || ledgerError || auditError) return res.status(503).json({ error: 'Referral records are temporarily unavailable.' });
   const customerName = (id: string) => usersStore.find((user) => user.id === id)?.name || id;
   res.setHeader('Cache-Control', 'no-store');
   res.json({
@@ -2638,7 +2639,31 @@ app.get('/api/admin/referrals', requireAdmin, async (_req: RequestWithUser, res:
     uses: (uses || []).map((item: any) => ({ ...item, referrerName: customerName(item.referrer_id), referredName: customerName(item.referred_customer_id) })),
     wallets: (wallets || []).map((item: any) => ({ ...item, customerName: customerName(item.customer_id) })),
     ledger: (ledger || []).map((item: any) => ({ ...item, customerName: customerName(item.customer_id) })),
+    audit: audit || [],
   });
+});
+app.patch('/api/admin/referrals/:code/usage', requireAdmin, async (req: RequestWithUser, res: Response) => {
+  const code = typeof req.params.code === 'string' ? req.params.code.trim().toUpperCase() : '';
+  const newUsageCount = Number(req.body?.newUsageCount);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 300) : '';
+  if (!code || !Number.isInteger(newUsageCount) || newUsageCount < 0 || newUsageCount > 3 || !reason) {
+    return res.status(400).json({ error: 'Provide a referral code, a whole-number count from 0 to 3, and an audit reason.' });
+  }
+  const { data, error } = await supabase.rpc('campora_admin_adjust_referral_usage', {
+    p_code: code,
+    p_new_usage_count: newUsageCount,
+    p_reason: reason,
+    p_admin_id: req.user?.id || 'admin',
+    p_admin_name: req.user?.name || 'CAMPORA Admin',
+  });
+  if (error) {
+    const message = error.message || '';
+    return res.status(409).json({ error: message.includes('recorded registrations')
+      ? 'Referral count cannot be lower than the number of registered referrals.'
+      : message.includes('not found') ? 'Referral code was not found.' : 'Referral count correction could not be saved.' });
+  }
+  const usageCount = Array.isArray(data) ? Number(data[0]?.usage_count ?? newUsageCount) : newUsageCount;
+  res.json({ success: true, usageCount, message: `Referral usage count updated to ${usageCount}/3. The correction was recorded in the admin audit log.` });
 });
 app.patch('/api/admin/customers/:id/wallet', requireAdmin, async (req: RequestWithUser, res: Response) => {
   const customerId = req.params.id;
@@ -2657,41 +2682,56 @@ app.patch('/api/admin/customers/:id/wallet', requireAdmin, async (req: RequestWi
   res.json({ success: true, balance: Array.isArray(data) ? Number(data[0]?.new_balance || 0) : 0, message: 'Wallet adjustment saved in the transaction ledger.' });
 });
 
-// Admin List All Customers
-app.get('/api/admin/customers', requireAdmin, (_req: RequestWithUser, res: Response) => {
+// Admin List All Customers, including accounts that have not placed an order yet.
+app.get('/api/admin/customers', requireAdmin, async (_req: RequestWithUser, res: Response) => {
   const customerMap = new Map<string, any>();
-
+  usersStore.filter((user) => user.role === 'customer').forEach((user) => {
+    customerMap.set(user.id, {
+      id: user.id, name: user.name, email: user.email, whatsapp: user.whatsapp || '',
+      college: user.college || '', ordersCount: 0, totalSpend: 0, orders: [],
+      referralCode: '', referralUsage: 0, successfulReferrals: 0, walletBalance: 0,
+    });
+  });
   ordersStore.forEach((ord) => {
-    const key = ord.customerEmail.toLowerCase();
-    if (!customerMap.has(key)) {
-      customerMap.set(key, {
-        id: ord.customerId,
-        name: ord.customerName,
-        email: ord.customerEmail,
-        whatsapp: ord.whatsappNumber,
-        college: ord.college,
-        ordersCount: 0,
-        totalSpend: 0,
-        orders: [],
+    if (!customerMap.has(ord.customerId)) {
+      customerMap.set(ord.customerId, {
+        id: ord.customerId, name: ord.customerName, email: ord.customerEmail,
+        whatsapp: ord.whatsappNumber, college: ord.college, ordersCount: 0,
+        totalSpend: 0, orders: [], referralCode: '', referralUsage: 0,
+        successfulReferrals: 0, walletBalance: 0,
       });
     }
-
-    const c = customerMap.get(key);
-    c.ordersCount += 1;
-    if (ord.paymentStatus === 'paid') {
-      c.totalSpend += ord.finalPrice || ord.total;
-    }
-    c.orders.push({
-      id: ord.id,
-      serviceName: ord.serviceName,
-      status: ord.status,
-      paymentStatus: ord.paymentStatus,
-      total: ord.finalPrice || ord.total,
-      createdAt: ord.createdAt,
+    const customer = customerMap.get(ord.customerId);
+    customer.ordersCount += 1;
+    if (ord.paymentStatus === 'paid') customer.totalSpend += Number(ord.finalPrice || ord.total || 0);
+    customer.orders.push({
+      id: ord.id, serviceName: ord.serviceName, status: ord.status,
+      paymentStatus: ord.paymentStatus, total: ord.finalPrice || ord.total, createdAt: ord.createdAt,
     });
   });
 
-  res.json({ customers: Array.from(customerMap.values()) });
+  const [{ data: codes, error: codeError }, { data: wallets, error: walletError }, { data: uses, error: usesError }] = await Promise.all([
+    supabase.from('campora_referral_codes').select('code,referrer_id,usage_count'),
+    supabase.from('campora_wallets').select('customer_id,balance'),
+    supabase.from('campora_referral_uses').select('referrer_id,reward_status'),
+  ]);
+  if (codeError || walletError || usesError) return res.status(503).json({ error: 'Customer referral and wallet details are temporarily unavailable.' });
+  for (const code of codes || []) {
+    const customer = customerMap.get(code.referrer_id);
+    if (customer) customer.referralCode = code.code;
+    if (customer) customer.referralUsage = Number(code.usage_count || 0);
+  }
+  for (const wallet of wallets || []) {
+    const customer = customerMap.get(wallet.customer_id);
+    if (customer) customer.walletBalance = Number(wallet.balance || 0);
+  }
+  for (const use of uses || []) {
+    const customer = customerMap.get(use.referrer_id);
+    if (customer && use.reward_status === 'credited') customer.successfulReferrals += 1;
+  }
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ customers: Array.from(customerMap.values()).sort((a, b) => a.name.localeCompare(b.name)) });
 });
 
 // Admin File Repository Aggregator
