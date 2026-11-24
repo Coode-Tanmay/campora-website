@@ -151,17 +151,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onCloseAdmin }) 
     fetchAdminData();
     // Poll the protected admin orders endpoint so customer submissions and changes
     // made in other sessions appear without a manual browser refresh.
-    const refreshOrders = async () => {
-      try {
-        const response = await api.getAdminOrders();
-        setOrders(response.orders || []);
-      } catch (err: any) {
-        if (err?.status === 401 || err?.status === 403) {
-          triggerToast(err.message || 'Administrator session expired. Please sign in again.');
-        }
-      }
+    const refreshAdminData = () => {
+      if (document.visibilityState === 'visible') void fetchAdminData(false);
     };
-    const interval = window.setInterval(refreshOrders, 8000);
+    const interval = window.setInterval(refreshAdminData, 8000);
     const handleFocus = () => { void fetchAdminData(false); };
     window.addEventListener('focus', handleFocus);
     return () => {
